@@ -3,12 +3,24 @@
 \name{ccc}
 \alias{ccc}
 \alias{print.ccc}
+\alias{summary.ccc}
+\alias{print.summary.ccc}
 \alias{plot.ccc}
 \title{Pairwise Lin's concordance correlation coefficient}
 \usage{
 ccc(data, ci = FALSE, conf_level = 0.95, verbose = FALSE)
 
-\method{print}{ccc}(x, digits = 4, ...)
+\method{print}{ccc}(x, digits = 4, ci_digits = 4, show_ci = c("auto", "yes", "no"), ...)
+
+\method{summary}{ccc}(
+  object,
+  digits = 4,
+  ci_digits = 2,
+  show_ci = c("auto", "yes", "no"),
+  ...
+)
+
+\method{print}{summary.ccc}(x, ...)
 
 \method{plot}{ccc}(
   x,
@@ -17,6 +29,7 @@ ccc(data, ci = FALSE, conf_level = 0.95, verbose = FALSE)
   high_color = "steelblue1",
   mid_color = "white",
   value_text_size = 4,
+  ci_text_size = 3,
   ...
 )
 }
@@ -30,14 +43,22 @@ Non-numeric columns will be ignored.}
 
 \item{verbose}{Logical; if TRUE, prints how many threads are used}
 
-\item{x}{An object of class \code{"ccc"} (either a matrix or a list with
-confidence intervals).}
+\item{x}{An object of class \code{"ccc"} (either a matrix or a list with CIs).}
 
-\item{digits}{Integer; number of decimal places to print in the concordance
-matrix (default is 4).}
+\item{digits}{Integer; decimals for CCC estimates (default 4).}
 
-\item{...}{Additional arguments passed to underlying functions
-(like \code{theme} or \code{print}).}
+\item{ci_digits}{Integer; decimals for CI bounds (default 2).}
+
+\item{show_ci}{One of \code{"auto"}, \code{"yes"}, \code{"no"}.
+\itemize{
+\item \code{"auto"} (default): include CI columns only if the object has non-NA CIs.
+\item \code{"yes"}: always include CI columns (may contain NA).
+\item \code{"no"}: never include CI columns.
+}}
+
+\item{...}{Passed to \code{ggplot2::theme()}.}
+
+\item{object}{A \code{"ccc"} or \code{"ccc_ci"} object to summarize.}
 
 \item{title}{Title for the plot.}
 
@@ -45,9 +66,11 @@ matrix (default is 4).}
 
 \item{high_color}{Color for high CCC values.}
 
-\item{mid_color}{Color for mid CCC values (typically near 0).}
+\item{mid_color}{Color for mid CCC values.}
 
-\item{value_text_size}{Text size for numbers in the heatmap.}
+\item{value_text_size}{Text size for CCC values in the heatmap.}
+
+\item{ci_text_size}{Text size for confidence intervals.}
 }
 \value{
 A symmetric numeric matrix with class \code{"ccc"} and attributes:
@@ -58,34 +81,57 @@ A symmetric numeric matrix with class \code{"ccc"} and attributes:
 If \code{ci = FALSE}, returns matrix of class \code{"ccc"}.
 If \code{ci = TRUE}, returns a list with elements: \code{est},
 \code{lwr.ci}, \code{upr.ci}.
+
+For \code{summary.ccc}, a data frame with columns
+\code{method1}, \code{method2}, \code{estimate} and (optionally)
+\code{lwr}, \code{upr}.
 }
 \description{
 Computes all pairwise Lin's Concordance Correlation Coefficients (CCC)
 from the numeric columns of a matrix or data frame. CCC measures both
 precision (Pearson correlation) and accuracy (closeness to the 45-degree line).
 This function is backed by a high-performance 'C++' implementation.
+
+Lin's CCC quantifies the concordance between a new test/measurement
+and a gold-standard for the same variable. Like a correlation, CCC
+ranges from -1 to 1 with perfect agreement at 1, and it cannot exceed the
+absolute value of the Pearson correlation between variables. It can be
+legitimately computed even with small samples (e.g., 10 observations),
+and results are often similar to intraclass correlation coefficients.
+CCC provides a single summary of agreement, but it may not capture
+systematic bias; a Bland–Altman plot (differences vs. means) is recommended
+to visualize bias, proportional trends, and heteroscedasticity (see
+\code{\link{bland_altman}}).
 }
 \details{
-Lin's CCC is defined as:
+Lin's CCC is defined as
 \deqn{
-\rho_c = \frac{2 \cdot \mathrm{cov}(X, Y)}{\sigma_X^2 + \sigma_Y^2 +
-(\mu_X - \mu_Y)^2}
-}{
-rho_c = 2 * cov(X, Y) / [var(X) + var(Y) + (mean(X) - mean(Y))^2]
+\rho_c \;=\; \frac{2\,\mathrm{cov}(X, Y)}
+                 {\sigma_X^2 + \sigma_Y^2 + (\mu_X - \mu_Y)^2},
 }
-
-This formula combines the Pearson correlation coefficient
-\eqn{r = \mathrm{cov}(X, Y) / (\sigma_X \sigma_Y)}
-with a bias correction factor:
+where \eqn{\mu_X,\mu_Y} are the means, \eqn{\sigma_X^2,\sigma_Y^2} the
+variances, and \eqn{\mathrm{cov}(X,Y)} the covariance. Equivalently,
 \deqn{
-C_b = \frac{2 \sigma_X \sigma_Y}{\sigma_X^2 + \sigma_Y^2 + (\mu_X - \mu_Y)^2}
+\rho_c \;=\; r \times C_b, \qquad
+r \;=\; \frac{\mathrm{cov}(X,Y)}{\sigma_X \sigma_Y}, \quad
+C_b \;=\; \frac{2 \sigma_X \sigma_Y}
+               {\sigma_X^2 + \sigma_Y^2 + (\mu_X - \mu_Y)^2}.
 }
+Hence \eqn{|\rho_c| \le |r| \le 1}, \eqn{\rho_c = r} iff
+\eqn{\mu_X=\mu_Y} and \eqn{\sigma_X=\sigma_Y}, and \eqn{\rho_c=1} iff, in
+addition, \eqn{r=1}. CCC is symmetric in \eqn{(X,Y)} and penalises both
+location and scale differences; unlike Pearson's \eqn{r}, it is not invariant
+to affine transformations that change means or variances.
 
-Confidence intervals are not provided in the matrix version to retain speed,
-but can be computed separately for individual variable pairs using the
-scalar form of Lin's CCC.
+When \code{ci = TRUE}, large-sample
+confidence intervals for \eqn{\rho_c} are returned for each pair (delta-method
+approximation). For speed, CIs are omitted when \code{ci = FALSE}.
 
-Missing values are not allowed; input must be clean numeric data.
+If either variable has zero variance, \eqn{\rho_c} is
+undefined and \code{NA} is returned for that pair (including the diagonal).
+
+Missing values are not allowed; inputs must be numeric with at least two
+distinct non-missing values per column.
 }
 \examples{
 # Example with multivariate normal data
@@ -97,6 +143,7 @@ set.seed(123)
 mat_mvn <- MASS::mvrnorm(n = 100, mu = mu, Sigma = Sigma)
 result_mvn <- ccc(mat_mvn)
 print(result_mvn)
+summary(result_mvn)
 plot(result_mvn)
 
 }
@@ -111,7 +158,11 @@ Bland J, Altman D (1986). Statistical methods for assessing agreement
 between two methods of clinical measurement. The Lancet 327: 307-310.
 }
 \seealso{
-\code{\link{print.ccc}}, \code{\link{plot.ccc}}
+\code{\link{print.ccc}}, \code{\link{plot.ccc}},
+\code{\link{bland_altman}}
+
+For repeated measurements look at \code{\link{ccc_lmm_reml}},
+\code{\link{ccc_pairwise_u_stat}} or \code{\link{bland_altman_repeated}}
 }
 \author{
 Thiago de Paula Oliveira
