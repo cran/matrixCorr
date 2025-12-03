@@ -421,15 +421,23 @@ bland_altman_repeated <- function(data = NULL, response, subject, method, time,
                                   include_slope = FALSE,
                                   use_ar1 = FALSE, ar1_rho = NA_real_,
                                   max_iter = 200L, tol = 1e-6,
-                                  verbose = FALSE) {
+  verbose = FALSE) {
 
   # --- resolve columns if 'data' provided and names given ---
   if (!is.null(data)) {
-    if (!inherits(data, "data.frame"))
-      stop("`data` must be a data.frame or data.table.")
+    if (!inherits(data, "data.frame")) {
+      abort_bad_arg("data",
+        message = "must be a data.frame or data.table."
+      )
+    }
     pull <- function(x) {
       if (is.character(x) && length(x) == 1L) {
-        if (!x %in% names(data)) stop("Column '", x, "' not found in `data`.")
+        if (!x %in% names(data)) {
+          abort_bad_arg("data",
+            message = "Column '{x}' not found in `data`.",
+            x = x
+          )
+        }
         data[[x]]
       } else x
     }
@@ -480,24 +488,49 @@ bland_altman_repeated <- function(data = NULL, response, subject, method, time,
   m <- data_long[[mapping$method  ]]
   t <- data_long[[mapping$time    ]]
 
-  if (!is.numeric(y) || length(y) < 2L) stop("`response` must be numeric with length > 1.")
-  if (!(is.integer(s) || is.factor(s) || is.numeric(s)))
-    stop("`subject` must be integer/factor/numeric.")
+  if (!is.numeric(y) || length(y) < 2L) {
+    abort_bad_arg("response",
+      message = "must be numeric with length > 1."
+    )
+  }
+  if (!(is.integer(s) || is.factor(s) || is.numeric(s))) {
+    abort_bad_arg("subject",
+      message = "must be integer, factor, or numeric."
+    )
+  }
   s <- as.integer(as.factor(s))
   if (!is.factor(m)) m <- as.factor(m)
   m <- droplevels(m)
   mlev <- levels(m)
-  if (length(mlev) < 2L) stop("Need at least 2 distinct methods in `method`.")
-  if (!(is.integer(t) || is.numeric(t))) stop("`time` must be integer/numeric.")
+  if (length(mlev) < 2L) {
+    abort_bad_arg("method",
+      message = "Need at least 2 distinct methods in `method`."
+    )
+  }
+  if (!(is.integer(t) || is.numeric(t))) {
+    abort_bad_arg("time",
+      message = "must be integer or numeric."
+    )
+  }
   t <- as.integer(t)
 
-  if (!is.numeric(two) || length(two) != 1L || two <= 0) stop("`two` must be a positive scalar.")
-  if (!(is.numeric(conf_level) && length(conf_level) == 1L && conf_level > 0 && conf_level < 1))
-    stop("`conf_level` must be in (0,1).")
+  if (!is.numeric(two) || length(two) != 1L || !is.finite(two) || two <= 0) {
+    abort_bad_arg("two",
+      message = "`two` must be a positive scalar."
+    )
+  }
+  if (!is.numeric(conf_level) || length(conf_level) != 1L ||
+      !is.finite(conf_level) || conf_level <= 0 || conf_level >= 1) {
+    abort_bad_arg("conf_level",
+      message = "`conf_level` must be in (0,1)."
+    )
+  }
+  check_bool(include_slope, arg = "include_slope")
+  check_bool(use_ar1, arg = "use_ar1")
+  check_bool(verbose, arg = "verbose")
   if (isTRUE(use_ar1)) {
     if (!is.na(ar1_rho)) {
-      if (!is.finite(ar1_rho)) stop("`ar1_rho` must be finite or NA when use_ar1=TRUE.")
-      if (abs(ar1_rho) >= 0.999) stop("`ar1_rho` must be in (-0.999, 0.999).")
+      ar1_rho <- check_ar1_rho(ar1_rho, arg = "ar1_rho", bound = 0.999)
     }
   } else {
     ar1_rho <- NA_real_
@@ -643,7 +676,7 @@ bland_altman_repeated <- function(data = NULL, response, subject, method, time,
     data_long      = data_long,
     mapping        = mapping
   )
-  class(ba_repeated) <- c("ba_repeated_matrix","list")
+  ba_repeated <- structure(ba_repeated, class = c("ba_repeated_matrix","list"))
   attr(ba_repeated, "conf.level") <- conf_level
   ba_repeated
 }
@@ -701,7 +734,7 @@ bland_altman_repeated <- function(data = NULL, response, subject, method, time,
     ar1_rho       = if (use_ar1) as.numeric(fit$ar1_rho) else NA_real_,
     ar1_estimated = if (use_ar1) isTRUE(fit$ar1_estimated) else NA
   )
-  class(ba_repeated) <- c("ba_repeated","list")
+  ba_repeated <- structure(ba_repeated, class = c("ba_repeated","list"))
   attr(ba_repeated, "conf.level") <- conf_level
   ba_repeated
 }
@@ -718,7 +751,7 @@ bland_altman_repeated <- function(data = NULL, response, subject, method, time,
 #' @param ... Unused.
 #' @export
 print.ba_repeated <- function(x, digits = 3, ci_digits = 3, ...) {
-  stopifnot(inherits(x, "ba_repeated"))
+  check_inherits(x, "ba_repeated")
   n   <- as.integer(x$based.on)
   two <- as.numeric(x$two)
   cl  <- suppressWarnings(as.numeric(attr(x, "conf.level")))
@@ -776,7 +809,7 @@ print.ba_repeated_matrix <- function(x,
                                      ci_digits = 3,
                                      style = c("pairs","matrices"),
                                      ...) {
-  stopifnot(inherits(x, "ba_repeated_matrix"))
+  check_inherits(x, "ba_repeated_matrix")
   style <- match.arg(style)
   cl <- suppressWarnings(as.numeric(attr(x, "conf.level")))
   has_ci <- all(c("mean_ci_low","mean_ci_high",
@@ -848,7 +881,7 @@ summary.ba_repeated <- function(object,
                                 digits = 3,
                                 ci_digits = 3,
                                 ...) {
-  stopifnot(inherits(object, "ba_repeated"))
+  check_inherits(object, "ba_repeated")
   cl <- suppressWarnings(as.numeric(attr(object, "conf.level")))
   n  <- as.integer(object$based.on)
 
@@ -886,8 +919,8 @@ summary.ba_repeated <- function(object,
   ba_repeated$ar1_rho        <- if (isTRUE(object$use_ar1)) round(num_or_na_ba(object$ar1_rho), digits) else NA_real_
   ba_repeated$ar1_estimated  <- if (isTRUE(object$use_ar1)) isTRUE(object$ar1_estimated) else NA
 
+  ba_repeated <- structure(ba_repeated, class = c("summary.ba_repeated","data.frame"))
   attr(ba_repeated, "conf.level") <- cl
-  class(ba_repeated) <- c("summary.ba_repeated","data.frame")
   ba_repeated
 }
 
@@ -897,7 +930,7 @@ summary.ba_repeated_matrix <- function(object,
                                        digits = 3,
                                        ci_digits = 3,
                                        ...) {
-  stopifnot(inherits(object, "ba_repeated_matrix"))
+  check_inherits(object, "ba_repeated_matrix")
   cl <- suppressWarnings(as.numeric(attr(object, "conf.level")))
   methods <- object$methods
   m <- length(methods)
@@ -943,9 +976,9 @@ summary.ba_repeated_matrix <- function(object,
     }
     rows[[k]] <- row
   }
-  df <- do.call(rbind.data.frame, rows)
+  df <- structure(do.call(rbind.data.frame, rows),
+                  class = c("summary.ba_repeated_matrix", "data.frame"))
   attr(df, "conf.level") <- cl
-  class(df) <- c("summary.ba_repeated_matrix", "data.frame")
   df
 }
 
@@ -1033,7 +1066,7 @@ plot.ba_repeated <- function(x,
                              symmetrize_y = TRUE,
                              show_points = TRUE,
                              ...) {
-  stopifnot(inherits(x, "ba_repeated"))
+  check_inherits(x, "ba_repeated")
   smoother <- match.arg(smoother)
 
   # Prefer pre-computed points if present
@@ -1162,7 +1195,7 @@ plot.ba_repeated_matrix <- function(
     show_points = TRUE,
     ...
 ) {
-  stopifnot(inherits(x, "ba_repeated_matrix"))
+  check_inherits(x, "ba_repeated_matrix")
   facet_scales <- match.arg(facet_scales)
   smoother <- match.arg(smoother)
   methods <- x$methods
@@ -1178,13 +1211,22 @@ plot.ba_repeated_matrix <- function(
   )
 
   if (!is.null(against)) {
-    if (!against %in% methods)
-      stop("`against` must be one of: ", paste(methods, collapse=", "))
+    if (!against %in% methods) {
+      abort_bad_arg("against",
+        message = "must be one of: {methods*?{, }{ and }}.",
+        methods = methods
+      )
+    }
     js <- match(against, methods)
     all_pairs <- subset(all_pairs, j == js | k == js)
   } else if (!is.null(pairs)) {
     all_pairs <- subset(all_pairs, lab %in% pairs)
-    if (!nrow(all_pairs)) stop("None of requested `pairs` matched.")
+    if (!nrow(all_pairs)) {
+      abort_bad_arg("pairs",
+        message = "None of the requested pairs matched available contrasts.",
+        .hint = "Use the \"row - column\" labels shown in print/summary output."
+      )
+    }
   }
   pairs_order <- all_pairs$lab
 
@@ -1317,7 +1359,10 @@ num_or_na_ba <- function(x) {
   )
   if (canonical %in% names(df)) return(canonical)
 
-  stop("Column for '", key, "' not found in stored data_long.")
+  abort_bad_arg("mapping",
+    message = "Column for '{key}' not found in stored data_long.",
+    key = key
+  )
 }
 
 #' @keywords internal

@@ -112,20 +112,20 @@ ccc <- function(data, ci = FALSE, conf_level = 0.95, verbose = FALSE) {
     ccc_lin$upr.ci <- `dimnames<-`(ccc_lin$upr.ci,
                                    list(colnames_data, colnames_data))
 
+    ccc_lin <- structure(ccc_lin, class = c("ccc", "ccc_ci"))   # list with CIs
     attr(ccc_lin, "method") <- "Lin's concordance"
     attr(ccc_lin, "description") <-
       "Pairwise Lin's concordance with confidence intervals"
     attr(ccc_lin, "package") <- "matrixCorr"
-    class(ccc_lin) <- c("ccc", "ccc_ci")   # list with CIs
   } else {
     est <- ccc_cpp(mat)
     ccc_lin <- `dimnames<-`(est, list(colnames_data, colnames_data))
 
+    ccc_lin <- structure(ccc_lin, class = c("ccc", "matrix"))   # matrix printing still available
     attr(ccc_lin, "method") <- "Lin's concordance"
     attr(ccc_lin, "description") <- "Pairwise Lin's concordance correlation matrix"
     attr(ccc_lin, "package") <- "matrixCorr"
     attr(ccc_lin, "conf.level")  <- conf_level
-    class(ccc_lin) <- c("ccc", "matrix")   # matrix printing still available
   }
 
   ccc_lin
@@ -164,7 +164,9 @@ print.ccc <- function(x,
     lwr <- matrix(NA_real_, nrow(est), ncol(est), dimnames = dimnames(est))
     upr <- lwr
   } else {
-    stop("Invalid object format for class 'ccc'.")
+    abort_bad_arg("x",
+      message = "must be a matrix or a list with elements `est`, `lwr.ci`, and `upr.ci`."
+    )
   }
 
   rn <- rownames(est); cn <- colnames(est)
@@ -269,7 +271,9 @@ summary.ccc <- function(object,
     upr <- lwr
     conf_level <- NA_real_
   } else {
-    stop("Invalid object format for class 'ccc'.")
+    abort_bad_arg("object",
+      message = "must be a matrix or a list with elements `est`, `lwr.ci`, and `upr.ci`."
+    )
   }
 
   # labels (fallback if missing)
@@ -323,12 +327,11 @@ summary.ccc <- function(object,
   }
 
   # carry attrs for printing
+  df <- structure(df, class = c("summary.ccc", "data.frame"))
   attr(df, "conf.level") <- if (is.finite(conf_level)) conf_level else NA_real_
   attr(df, "has_ci")     <- isTRUE(include_ci)
   attr(df, "digits")     <- digits
   attr(df, "ci_digits")  <- ci_digits
-
-  class(df) <- c("summary.ccc", "data.frame")
   df
 }
 
@@ -386,8 +389,7 @@ plot.ccc <- function(x,
                      ci_text_size = 3,
                      ...) {
 
-  if (!inherits(x, "ccc"))
-    stop("x must be of class 'ccc'.")
+  check_inherits(x, "ccc")
 
   # --- Build long data with proper alignment by (Var1, Var2) ---
   est_mat <- if (is.list(x) && !is.null(x$est)) x$est else unclass(x)

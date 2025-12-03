@@ -151,8 +151,7 @@ spearman_rho <- function(data, check_na = TRUE) {
   attr(result, "method") <- "spearman"
   attr(result, "description") <- "Pairwise Spearman's rank correlation matrix"
   attr(result, "package") <- "matrixCorr"
-  class(result) <- c("spearman_rho", "matrix")
-  return(result)
+  return(structure(result, class = c("spearman_rho", "matrix")))
 }
 
 #' @rdname spearman_rho
@@ -225,9 +224,7 @@ plot.spearman_rho <-
            low_color = "indianred1", high_color = "steelblue1",
            mid_color = "white", value_text_size = 4, ...) {
 
-  if (!inherits(x, "spearman_rho")) {
-    stop("x must be of class 'spearman_rho'.")
-  }
+  check_inherits(x, "spearman_rho")
 
   mat <- as.matrix(x)
   df <- as.data.frame(as.table(mat))

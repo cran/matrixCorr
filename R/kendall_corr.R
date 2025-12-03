@@ -101,38 +101,25 @@
 #' @author Thiago de Paula Oliveira
 #' @export
 kendall_tau <- function(data, y = NULL, check_na = TRUE) {
-  if (!is.logical(check_na) || length(check_na) != 1L) {
-    stop("`check_na` must be a single logical.", call. = FALSE)
-  }
+  check_bool(check_na)
 
   # Two vectors
   if (!is.null(y)) {
     if (!is.numeric(data) || !is.numeric(y)) {
-      stop("For two-vector mode, both `data` and `y` must be numeric vectors.",
-           call. = FALSE)
+      abort_bad_arg("data",
+        message = "and {.arg y} must be numeric vectors for two-vector mode."
+      )
     }
-    if (length(data) != length(y)) {
-      stop("`data` and `y` must have the same length.", call. = FALSE)
-    }
+    check_same_length(data, y, arg_x = "data", arg_y = "y")
     if (check_na && (any(!is.finite(data)) || any(!is.finite(y)))) {
-      stop("Missing/undefined values detected. Set `check_na = FALSE` to bypass.",
-           call. = FALSE)
+      abort_bad_arg("data",
+        message = "and {.arg y} must be free of NA/NaN/Inf when {.arg check_na} = TRUE.",
+        .hint   = "Set `check_na = FALSE` only if missingness has been handled upstream."
+      )
     }
 
     tau <- kendall_tau2_cpp(as.numeric(data), as.numeric(y))
-
-    nm1 <- deparse(substitute(data))
-    nm2 <- deparse(substitute(y))
-    labs <- c(nm1, nm2)
-    use_names <- all(nzchar(labs)) && !any(labs %in% c("data", "y"))
-
-    out <- matrix(c(1, tau, tau, 1), nrow = 2L,
-                  dimnames = if (use_names) list(labs, labs) else NULL)
-    attr(out, "method")      <- "kendall"
-    attr(out, "description") <- "Pairwise Kendall's tau (auto tau-a/tau-b) correlation matrix"
-    attr(out, "package")     <- "matrixCorr"
-    class(out) <- c("kendall_matrix", "matrix")
-    return(out)
+    return(as.numeric(tau))
   }
 
   # Two columns matrix/data.frame
@@ -144,8 +131,8 @@ kendall_tau <- function(data, y = NULL, check_na = TRUE) {
     dn  <- colnames(data)
     out <- matrix(c(1, tau, tau, 1), nrow = 2L,
                   dimnames = if (!is.null(dn)) list(dn, dn) else NULL)
+    out <- structure(out, class = c("kendall_matrix", "matrix"))
     attr(out, "method") <- "kendall"
-    class(out) <- c("kendall_matrix", "matrix")
     return(out)
   }
 
@@ -155,10 +142,10 @@ kendall_tau <- function(data, y = NULL, check_na = TRUE) {
 
   result <- kendall_matrix_cpp(numeric_data)
   colnames(result) <- rownames(result) <- colnames_data
+  result <- structure(result, class = c("kendall_matrix", "matrix"))
   attr(result, "method")      <- "kendall"
   attr(result, "description") <- "Pairwise Kendall's tau (auto tau-a/tau-b) correlation matrix"
   attr(result, "package")     <- "matrixCorr"
-  class(result) <- c("kendall_matrix", "matrix")
   result
 }
 
@@ -239,9 +226,7 @@ plot.kendall_matrix <- function(x, title = "Kendall's Tau correlation heatmap",
                                 mid_color = "white",
                                 value_text_size = 4, ...) {
 
-  if (!inherits(x, "kendall_matrix")) {
-    stop("x must be of class 'kendall_matrix'.")
-  }
+  check_inherits(x, "kendall_matrix")
 
   mat <- as.matrix(x)
   df <- as.data.frame(as.table(mat))

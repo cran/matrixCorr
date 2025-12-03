@@ -107,10 +107,10 @@ pearson_corr <- function(data, check_na = TRUE) {
   colnames_data <- colnames(numeric_data)
   result <- pearson_matrix_cpp(numeric_data)
   colnames(result) <- rownames(result) <- colnames_data
+  result <- structure(result, class = c("pearson_corr", "matrix"))
   attr(result, "method") <- "pearson"
   attr(result, "description") <- "Pairwise Pearson correlation matrix"
   attr(result, "package") <- "matrixCorr"
-  class(result) <- c("pearson_corr", "matrix")
   return(result)
 }
 
@@ -185,9 +185,7 @@ plot.pearson_corr <-
            low_color = "indianred1", high_color = "steelblue1",
            mid_color = "white", value_text_size = 4, ...) {
 
-  if (!inherits(x, "pearson_corr")) {
-    stop("x must be of class 'pearson_corr'.")
-  }
+  check_inherits(x, "pearson_corr")
 
   mat <- as.matrix(x)
   df <- as.data.frame(as.table(mat))
