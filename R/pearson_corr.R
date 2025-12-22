@@ -97,6 +97,11 @@
 #' ## mean absolute error (MAE) of the off-diagonal correlations
 #' mean(abs(Rhat2[off] - Sigma[off]))
 #'
+#' # Interactive viewing (requires shiny)
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   view_corr_shiny(pr)
+#' }
+#'
 #' @useDynLib matrixCorr, .registration = TRUE
 #' @importFrom Rcpp evalCpp
 #' @seealso \code{\link{print.pearson_corr}}, \code{\link{plot.pearson_corr}}
@@ -199,7 +204,7 @@ plot.pearson_corr <-
                        size = value_text_size, color = "black") +
     ggplot2::scale_fill_gradient2(
       low = low_color, high = high_color, mid = mid_color,
-      midpoint = 0, limit = c(-1, 1), name = "Pearson"
+      midpoint = 0, limits = c(-1, 1), name = "Pearson"
     ) +
     ggplot2::theme_minimal(base_size = 12) +
     ggplot2::theme(

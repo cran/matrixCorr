@@ -70,6 +70,11 @@
 #' print(c(MAE_raw = mae_raw, MAE_shrunk = mae_shr))
 #' plot(Rshr, title = "Schafer-Strimmer shrinkage correlation")
 #'
+#' # Interactive viewing (requires shiny)
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   view_corr_shiny(Rshr)
+#' }
+#'
 #' @seealso \code{\link{print.schafer_corr}}, \code{\link{plot.schafer_corr}},
 #'   \code{\link{pearson_corr}}
 #' @author Thiago de Paula Oliveira
@@ -160,7 +165,7 @@ plot.schafer_corr <- function(
     title = "Schafer-Strimmer shrinkage correlation",
     cluster = TRUE,
     hclust_method = "complete",
-    triangle = "upper",
+    triangle = c("upper", "lower", "full"),
     show_values = FALSE,
     value_text_limit = 60,
     value_text_size = 3,

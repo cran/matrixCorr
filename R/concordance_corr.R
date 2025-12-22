@@ -81,6 +81,11 @@
 #' summary(result_mvn)
 #' plot(result_mvn)
 #'
+#' # Interactive viewing (requires shiny)
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   view_corr_shiny(result_mvn)
+#' }
+#'
 #' @importFrom stats var cov cor
 #' @importFrom graphics plot
 #' @importFrom ggplot2 ggplot aes geom_tile geom_text scale_fill_gradient2
@@ -97,6 +102,10 @@
 #' between two methods of clinical measurement. The Lancet 327: 307-310.
 #' @export
 ccc <- function(data, ci = FALSE, conf_level = 0.95, verbose = FALSE) {
+  check_bool(ci, arg = "ci")
+  check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
+  check_bool(verbose, arg = "verbose")
+
   numeric_data <- validate_corr_input(data)
   mat <- as.matrix(numeric_data)
   colnames_data <- colnames(numeric_data)
@@ -104,7 +113,16 @@ ccc <- function(data, ci = FALSE, conf_level = 0.95, verbose = FALSE) {
   if (verbose) cat("Using", openmp_threads(), "OpenMP threads\n")
 
   if (ci) {
+    if (nrow(mat) <= 2L) {
+      abort_bad_arg("data",
+        message = "must provide at least three observations per variable when {.arg ci} = TRUE.",
+        .hint   = "Increase the sample size or set ci = FALSE to obtain point estimates only."
+      )
+    }
     ccc_lin <- ccc_with_ci_cpp(mat, conf_level)
+    diag(ccc_lin$est)    <- 1
+    diag(ccc_lin$lwr.ci) <- 1
+    diag(ccc_lin$upr.ci) <- 1
     ccc_lin$est    <- `dimnames<-`(ccc_lin$est,
                                    list(colnames_data, colnames_data))
     ccc_lin$lwr.ci <- `dimnames<-`(ccc_lin$lwr.ci,
@@ -117,6 +135,7 @@ ccc <- function(data, ci = FALSE, conf_level = 0.95, verbose = FALSE) {
     attr(ccc_lin, "description") <-
       "Pairwise Lin's concordance with confidence intervals"
     attr(ccc_lin, "package") <- "matrixCorr"
+    attr(ccc_lin, "conf.level") <- conf_level
   } else {
     est <- ccc_cpp(mat)
     ccc_lin <- `dimnames<-`(est, list(colnames_data, colnames_data))
@@ -429,7 +448,7 @@ plot.ccc <- function(x,
     ggplot2::geom_text(ggplot2::aes(label = label), size = value_text_size) +
     ggplot2::scale_fill_gradient2(
       low = low_color, high = high_color, mid = mid_color,
-      midpoint = 0, limit = c(-1, 1), name = "CCC"
+      midpoint = 0, limits = c(-1, 1), name = "CCC"
     ) +
     ggplot2::coord_fixed() +
     ggplot2::theme_minimal(base_size = 12) +

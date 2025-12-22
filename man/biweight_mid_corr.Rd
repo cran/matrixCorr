@@ -2,6 +2,7 @@
 % Please edit documentation in R/biweight_mid_corr.R
 \name{biweight_mid_corr}
 \alias{biweight_mid_corr}
+\alias{diag.biweight_mid_corr}
 \alias{print.biweight_mid_corr}
 \alias{plot.biweight_mid_corr}
 \title{Biweight mid-correlation (bicor)}
@@ -17,6 +18,8 @@ biweight_mid_corr(
   sparse_threshold = NULL,
   n_threads = getOption("matrixCorr.threads", 1L)
 )
+
+diag.biweight_mid_corr(x, ...)
 
 \method{print}{biweight_mid_corr}(
   x,
@@ -84,6 +87,8 @@ entries with \code{|r| < sparse_threshold} to 0 and returns a sparse
 
 \item{x}{An object of class \code{biweight_mid_corr}.}
 
+\item{...}{Additional arguments passed to \code{ggplot2::theme()} or other layers.}
+
 \item{digits}{Integer; number of decimal places used for the matrix.}
 
 \item{max_rows}{Optional integer; maximum number of rows to display
@@ -95,8 +100,6 @@ entries with \code{|r| < sparse_threshold} to 0 and returns a sparse
 \item{width}{Integer; target console width for wrapping header text.}
 
 \item{na_print}{Character; how to display missing values.}
-
-\item{...}{Additional arguments passed to \code{ggplot2::theme()} or other layers.}
 
 \item{title}{Plot title. Default is \code{"Biweight mid-correlation heatmap"}.}
 
@@ -240,6 +243,11 @@ X <- matrix(rnorm(2000 * 40), 2000, 40)
 R <- biweight_mid_corr(X, c_const = 9, max_p_outliers = 1,
                        pearson_fallback = "hybrid")
 print(attr(R, "method"))
+
+# Interactive viewing (requires shiny)
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  view_corr_shiny(R)
+}
 
 }
 \references{

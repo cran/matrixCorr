@@ -145,6 +145,11 @@
 #' summary(ccc2)
 #' plot(ccc2)
 #'
+#' # Interactive viewing (requires shiny)
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   view_corr_shiny(ccc2)
+#' }
+#'
 #' #------------------------------------------------------------------------
 #' # Choosing delta based on distance sensitivity
 #' #------------------------------------------------------------------------
@@ -229,6 +234,12 @@ ccc_pairwise_u_stat <- function(data,
   cccr_upr <- matrix(NA_real_, L, L, dimnames = list(method_levels, method_levels))
 
   n_threads <- max(1L, as.integer(n_threads))
+  prev_threads <- get_omp_threads()
+  on.exit({
+    if (!is.null(prev_threads) && is.finite(prev_threads) && prev_threads > 0L) {
+      set_omp_threads(as.integer(prev_threads))
+    }
+  }, add = TRUE)
   set_omp_threads(n_threads)
   if (verbose) cat("Using", get_omp_threads(), "OpenMP threads\n")
 
@@ -270,6 +281,15 @@ ccc_pairwise_u_stat <- function(data,
       if (!length(keep_ids)) {
         cli::cli_abort(
           "All subjects have incomplete method/time coverage for {.val {m1}} vs {.val {m2}}."
+        )
+      }
+
+      if (length(keep_ids) < 2L) {
+        cli::cli_abort(
+          c(
+            "At least two subjects with complete observations are required for {.val {m1}} vs {.val {m2}}.",
+            "i" = "Provide additional subjects or relax filtering so each retained subject has both methods at all time points."
+          )
         )
       }
 
@@ -831,6 +851,12 @@ ccc_pairwise_u_stat <- function(data,
 #' fit_both <- ccc_lmm_reml(dat_both, "y", "id", method = "method", time = "time",
 #'                          vc_select = "auto", verbose = TRUE)
 #' summary(fit_both)
+#' plot(fit_both)
+#'
+#' # Interactive viewing (requires shiny)
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   view_corr_shiny(fit_both)
+#' }
 #'
 #' # ====================================================================
 #' # 2) Subject x TIME variance present (sag > 0) with two methods
@@ -858,6 +884,7 @@ ccc_pairwise_u_stat <- function(data,
 #' fit_sag <- ccc_lmm_reml(dat_sag, "y", "id", method = "method", time = "time",
 #'                         vc_select = "auto", verbose = TRUE)
 #' summary(fit_sag)
+#' plot(fit_sag)
 #'
 #' # ====================================================================
 #' # 3) BOTH components present: sab > 0 and sag > 0 (2 methods x T times)
@@ -888,6 +915,7 @@ ccc_pairwise_u_stat <- function(data,
 #' fit_both <- ccc_lmm_reml(dat_both, "y", "id", method = "method", time = "time",
 #'                          vc_select = "auto", verbose = TRUE, ci = TRUE)
 #' summary(fit_both)
+#' plot(fit_both)
 #'
 #' # If you want to force-include both VCs (skip testing):
 #' fit_both_forced <-
@@ -895,6 +923,7 @@ ccc_pairwise_u_stat <- function(data,
 #'               vc_select = "none", include_subj_method  = TRUE,
 #'               include_subj_time  = TRUE, verbose = TRUE)
 #' summary(fit_both_forced)
+#' plot(fit_both_forced)
 #'
 #' # ====================================================================
 #' # 4) D_m choices: time-averaged (default) vs typical visit

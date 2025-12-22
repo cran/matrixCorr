@@ -124,6 +124,11 @@
 #'
 #' pc <- partial_correlation(X, method = "oas")
 #'
+#' # Interactive viewing (requires shiny)
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   view_corr_shiny(pc)
+#' }
+#'
 #' ## True partial correlation from Omega
 #' pcor_true <- -Omega / sqrt(diag(Omega) %o% diag(Omega))
 #' diag(pcor_true) <- 1
@@ -202,6 +207,9 @@
 partial_correlation <- function(data, method = c("oas","ridge","sample"),
                                 lambda = 1e-3, return_cov_precision = FALSE) {
   method <- match.arg(method)
+  lambda <- check_scalar_numeric(lambda, arg = "lambda", lower = 0, closed_lower = TRUE)
+  lambda <- as.numeric(lambda)
+  check_bool(return_cov_precision, arg = "return_cov_precision")
 
   numeric_data <-
     if (is.matrix(data) && is.double(data) && all(is.finite(data))) {
@@ -249,9 +257,10 @@ partial_correlation <- function(data, method = c("oas","ridge","sample"),
 #'   the printed matrix is truncated with a note about omitted rows/cols.
 #' @param ... Further arguments passed to \code{print.matrix()}.
 #' @return Invisibly returns \code{x}.
-#' @method print partial_correlation
+#' @method print partial_corr
+#' @importFrom utils capture.output
 #' @export
-print.partial_correlation <- function(
+print.partial_corr <- function(
     x,
     digits = 3,
     show_method = TRUE,
@@ -262,7 +271,9 @@ print.partial_correlation <- function(
   check_inherits(x, "partial_corr")
   M <- x$pcor
   check_matrix_dims(M, arg = "x$pcor")
+  M <- as.matrix(M)
 
+  lines <- character()
   if (isTRUE(show_method)) {
     meth <- if (!is.null(x$method)) as.character(x$method) else NA_character_
     hdr <- switch(
@@ -278,9 +289,9 @@ print.partial_correlation <- function(
       "sample" = "Partial correlation (sample covariance)",
       "Partial correlation"
     )
-    cat(hdr, "\n")
+    lines <- c(lines, hdr)
   } else {
-    cat("Partial correlation matrix:\n")
+    lines <- c(lines, "Partial correlation matrix:")
   }
 
   # keep only dim + dimnames attributes to print like a plain matrix
@@ -291,12 +302,18 @@ print.partial_correlation <- function(
     r  <- if (is.null(max_rows)) nr else min(nr, max_rows)
     c  <- if (is.null(max_cols)) nc else min(nc, max_cols)
     mm <- round(M[seq_len(r), seq_len(c), drop = FALSE], digits)
-    print(mm, ...)  # safe: ... is a formal
     if (nr > r || nc > c) {
-      cat(sprintf("... omitted: %d rows, %d cols\n", nr - r, nc - c))
+      lines <- c(lines, sprintf("omitted: %d rows, %d cols", nr - r, nc - c))
     }
+    body <- capture.output(print(mm, ...))
+    lines <- c(lines, body)
   } else {
-    print(round(M, digits), ...)
+    body <- capture.output(print(round(M, digits), ...))
+    lines <- c(lines, body)
+  }
+
+  if (length(lines)) {
+    writeLines(lines)
   }
 
   invisible(x)
@@ -359,10 +376,30 @@ plot.partial_corr <- function(
 
   # Optional reordering by hierarchical clustering of 1 - |pcor|
   if (isTRUE(reorder) && nrow(M) >= 2L) {
-    D  <- stats::as.dist(1 - pmin(1, abs(M)))
-    hc <- stats::hclust(D, method = "average")
-    ord <- hc$order
-    M <- M[ord, ord, drop = FALSE]
+    if (nrow(M) == ncol(M)) {
+      dist_mat <- 1 - pmin(1, abs(M))
+      dist_mat <- (dist_mat + t(dist_mat)) / 2
+      diag(dist_mat) <- 0
+      dist_mat[!is.finite(dist_mat)] <- 0
+      dist_mat <- as.matrix(dist_mat)
+      if (nrow(dist_mat) == ncol(dist_mat)) {
+        D <- tryCatch(
+          stats::as.dist(dist_mat),
+          warning = function(w) {
+            if (grepl("non-square matrix", conditionMessage(w), fixed = TRUE)) {
+              return(NULL)
+            }
+            warning(w)
+            NULL
+          }
+        )
+        if (!is.null(D) && isTRUE(attr(D, "Size") >= 2)) {
+          hc <- stats::hclust(D, method = "average")
+          ord <- hc$order
+          M <- M[ord, ord, drop = FALSE]
+        }
+      }
+    }
   }
 
   # Default title constructed from x$method (+ tuning, if present)
@@ -390,12 +427,8 @@ plot.partial_corr <- function(
   # Reverse y-axis order for a tidy heatmap
   df$Var1 <- factor(df$Var1, levels = rev(unique(df$Var1)))
 
-  ggplot2::ggplot(df, ggplot2::aes(x = Var2, y = Var1, fill = PCor)) +
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = Var2, y = Var1, fill = PCor)) +
     ggplot2::geom_tile(colour = "white") +
-    ggplot2::geom_text(
-      ggplot2::aes(label = ifelse(is.na(PCor), "", sprintf("%.2f", PCor))),
-      size = value_text_size, colour = "black"
-    ) +
     ggplot2::scale_fill_gradient2(
       low = low_color, high = high_color, mid = mid_color,
       midpoint = 0, limits = c(-1, 1), name = "Partial r",
@@ -409,4 +442,13 @@ plot.partial_corr <- function(
     ) +
     ggplot2::coord_fixed() +
     ggplot2::labs(title = title, x = NULL, y = NULL)
+
+  if (!is.null(value_text_size) && is.finite(value_text_size)) {
+    p <- p + ggplot2::geom_text(
+      ggplot2::aes(label = ifelse(is.na(PCor), "", sprintf("%.2f", PCor))),
+      size = value_text_size, colour = "black"
+    )
+  }
+
+  p
 }

@@ -138,6 +138,10 @@
 #' }
 #' cbind(r_target, est = round(est, 3), theory = round(true_corr, 3))
 #'
+#' # Interactive viewing (requires shiny)
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   view_corr_shiny(sp_X)
+#' }
 #' @useDynLib matrixCorr, .registration = TRUE
 #' @importFrom Rcpp evalCpp
 #' @seealso \code{\link{print.spearman_rho}}, \code{\link{plot.spearman_rho}}
@@ -238,7 +242,7 @@ plot.spearman_rho <-
                        size = value_text_size, color = "black") +
     ggplot2::scale_fill_gradient2(
       low = low_color, high = high_color, mid = mid_color,
-      midpoint = 0, limit = c(-1, 1), name = "Rho"
+      midpoint = 0, limits = c(-1, 1), name = "Rho"
     ) +
     ggplot2::theme_minimal(base_size = 12) +
     ggplot2::theme(
