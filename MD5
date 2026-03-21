@@ -1,4 +1,4 @@
-fd24502ce6465e58d0f1c9d2cf61fddc *DESCRIPTION
+a0f9ad774f2754ee81fb412fe0da8da8 *DESCRIPTION
 9beecc5af8b3f2427ab4e07cd6d5ccac *LICENSE
 dad3d58c6d59e3c5eb1b2e4c9ad158bb *NAMESPACE
 a2db1a27907107464db5b50db7386fd5 *R/RcppExports.R
@@ -17,8 +17,8 @@ c7a8c79f45b897fdd4c234c966806432 *R/spearman_rho.R
 9db4cc0cf4eadd9473f96a7d04b3ead4 *R/utils.R
 93501a61a42b5bc6cc2211b128e8e382 *R/validate_corr_input.R
 aab40b6a7e7f643eeade7ce8bcb8184e *R/view_corr_shiny.R
-964b1d493c3c594ee26fc0be9fa53a16 *README.md
-75d0a007992c60d09f764686e9397c0f *build/partial.rdb
+0e600bbc23bf405ade540b84b3edaf66 *README.md
+ba582b375e5afde780e991c9b7711c6a *build/partial.rdb
 4b84eb544f1b5370cac6cb82a382a319 *configure
 fb065ec37281c07ebb75eb396ae6e4e6 *inst/WORDLIST
 cceefba6c162b75417d58e6741e41811 *man/abort_bad_arg.Rd
@@ -78,10 +78,10 @@ f51462c97b34256488c3350c42b82e04 *src/bland_altman_repeated.cpp
 36f9b7251db6acd6bcee48018befdebd *src/concordance_corr.cpp
 b61363bff1643b2a9a42922159e21802 *src/correlation_utils.h
 3052df9603751d4d1f5b2759f890ae8d *src/distance_correlation.cpp
-0921054ef456307770479e98f2a967e9 *src/kendall_corr.cpp
+a642ea9041f88a9a9fea96d9472e6e70 *src/kendall_corr.cpp
 b1c3585a69495b81209d9472191af5c1 *src/matrixCorr_detail.h
 ecfb099535e83b00da21baa7ff2a17dc *src/partial_correlation.cpp
-2c0f34e8591872e314cc305421535dda *src/pearson.cpp
+4559cb76dfc167c37f14b512dda823e0 *src/pearson.cpp
 716b751d815be23f21b43e65f19ba666 *src/schafer_strimmer_shrinkage_correlation.cpp
 8a3740625e6aee0f898f14f2fb1cebfc *src/spearman.cpp
 6aa7bad2610183b1e40a7e9481db44b6 *src/tetrachoric.cpp

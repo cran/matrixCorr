@@ -1,7 +1,7 @@
 Package: matrixCorr
 Type: Package
 Title: Collection of Correlation and Association Estimators
-Version: 0.8.4
+Version: 0.8.5
 Authors@R: person(given = "Thiago de Paula", family = "Oliveira", 
     email = "thiago.paula.oliveira@gmail.com", role = c("aut", "cre"), 
     comment = c(ORCID = "0000-0002-4555-2584"))
@@ -31,9 +31,9 @@ URL: https://github.com/Prof-ThiagoOliveira/matrixCorr
 BugReports: https://github.com/Prof-ThiagoOliveira/matrixCorr/issues
 Config/testthat/edition: 3
 NeedsCompilation: yes
-Packaged: 2026-03-03 09:06:43 UTC; ThiagoOliveira
+Packaged: 2026-03-20 20:52:06 UTC; ThiagoOliveira
 Author: Thiago de Paula Oliveira [aut, cre] (ORCID:
     <https://orcid.org/0000-0002-4555-2584>)
 Maintainer: Thiago de Paula Oliveira <thiago.paula.oliveira@gmail.com>
 Repository: CRAN
-Date/Publication: 2026-03-03 09:30:02 UTC
+Date/Publication: 2026-03-21 01:20:02 UTC
