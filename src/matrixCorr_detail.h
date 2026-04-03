@@ -185,6 +185,85 @@ inline double rect_prob(double al, double au, double bl, double bu, double rho){
 } // namespace bvn_adaptive
 
 //------------------------------------------------------------------------------
+// ---------- BVN CDF (fast fixed Gauss-Legendre quadrature) ----------
+//------------------------------------------------------------------------------
+namespace bvn_fast {
+using matrixCorr_detail::norm1::Phi;
+
+constexpr double INV_2PI = 0.15915494309189533577;
+
+static constexpr double GL_X[10] = {
+  0.9931285991850949, 0.9639719272779138, 0.9122344282513259,
+  0.8391169718222188, 0.7463319064601508, 0.6360536807265150,
+  0.5108670019508271, 0.3737060887154195, 0.2277858511416451,
+  0.07652652113349733
+};
+
+static constexpr double GL_W[10] = {
+  0.01761400713915212, 0.04060142980038694, 0.06267204833410906,
+  0.08327674157670475, 0.1019301198172404, 0.1181945319615184,
+  0.1316886384491766, 0.1420961093183821, 0.1491729864726037,
+  0.1527533871307258
+};
+
+inline double bvn_theta_integrand(double theta, double a, double b) noexcept {
+  const double ct = std::cos(theta);
+  const double denom = ct * ct;
+  if (!(denom > 0.0) || !std::isfinite(denom)) return 0.0;
+  const double st = std::sin(theta);
+  const double expo = -(a * a - 2.0 * a * b * st + b * b) / (2.0 * denom);
+  if (expo < -745.0) return 0.0;
+  return std::exp(expo);
+}
+
+inline double Phi2(double a, double b, double rho){
+  using matrixCorr_detail::clamp_policy::nan_preserve;
+
+  if (std::isinf(a) && a < 0) return 0.0;
+  if (std::isinf(b) && b < 0) return 0.0;
+  if (std::isinf(a) && a > 0 && std::isinf(b) && b > 0) return 1.0;
+  if (std::isinf(a) && a > 0) return Phi(b);
+  if (std::isinf(b) && b > 0) return Phi(a);
+
+  rho = nan_preserve(rho, -0.999999, 0.999999);
+  const double pa = Phi(a);
+  const double pb = Phi(b);
+  if (rho == 0.0) return pa * pb;
+  if (rho > 0.99999) return Phi(std::min(a, b));
+  if (rho < -0.99999) return std::max(0.0, pa + pb - 1.0);
+
+  const double alpha = std::asin(rho);
+  const double center = 0.5 * alpha;
+  const double half = 0.5 * alpha;
+  double quad = 0.0;
+
+  for (int i = 0; i < 10; ++i) {
+    const double t1 = center - half * GL_X[i];
+    const double t2 = center + half * GL_X[i];
+    quad += GL_W[i] * (
+      bvn_theta_integrand(t1, a, b) +
+      bvn_theta_integrand(t2, a, b)
+    );
+  }
+
+  double out = pa * pb + half * quad * INV_2PI;
+  const double lo = std::max(0.0, pa + pb - 1.0);
+  const double hi = std::min(pa, pb);
+  if (!std::isfinite(out)) return NA_REAL;
+  return nan_preserve(out, lo, hi);
+}
+
+inline double rect_prob(double al, double au, double bl, double bu, double rho){
+  const double A = Phi2(au, bu, rho);
+  const double B = Phi2(al, bu, rho);
+  const double C = Phi2(au, bl, rho);
+  const double D = Phi2(al, bl, rho);
+  const double p = A - B - C + D;
+  return (p <= 0.0) ? 0.0 : p;
+}
+} // namespace bvn_fast
+
+//------------------------------------------------------------------------------
 // ---------- ranking utilities ----------
 //------------------------------------------------------------------------------
 namespace ranking {
@@ -444,6 +523,21 @@ inline arma::mat apply(const arma::mat& X, Metric metric){
 //------------------------------------------------------------------------------
 namespace linalg {
 
+// Copy the stored upper triangle into the lower triangle without allocating a
+// temporary full matrix.
+inline void copy_upper_to_lower_inplace(arma::mat& M) {
+  const arma::uword p = M.n_cols;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+  for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
+    const arma::uword uj = static_cast<arma::uword>(j);
+    for (arma::uword i = 0; i < uj; ++i) {
+      M(uj, i) = M(i, uj);
+    }
+  }
+}
+
 // X'X (upper triangle via BLAS SYRK) then symmetrize.
 // Returns p x p matrix XtX = X'X.
 inline arma::mat crossprod_no_copy(const arma::mat& X) {
@@ -460,7 +554,7 @@ inline arma::mat crossprod_no_copy(const arma::mat& X) {
   arma::blas::syrk<double>(&uplo, &trans, &N, &K,
                            &alpha, X.memptr(), &K,
                            &beta,  XtX.memptr(), &N);
-                           XtX = arma::symmatu(XtX);
+  copy_upper_to_lower_inplace(XtX);
 }
 #else
 XtX = X.t() * X;
@@ -484,8 +578,14 @@ inline void subtract_n_outer_mu(arma::mat& M, const arma::rowvec& mu, double n) 
       M(i, uj) += fj * mu[i];       // -= n * mu_i * mu_j
     }
   }
-  M = arma::symmatu(M);
+  copy_upper_to_lower_inplace(M);
 }
+
+// M := scale * (M - n * mu * mu') on the upper triangle, optionally adding a
+// diagonal shift, then symmetrize once.
+
+// M := scale * (M - n * mu * mu') on the upper triangle, optionally adding a
+// diagonal shift, then symmetrize once.
 
 // Ensure positive definiteness by geometric diagonal jitter until chol succeeds.
 inline void make_pd_inplace(arma::mat& S, double& jitter, const double max_jitter = 1e-2) {
@@ -498,6 +598,52 @@ inline void make_pd_inplace(arma::mat& S, double& jitter, const double max_jitte
       Rcpp::stop("Covariance not positive definite; jitter exceeded limit.");
     S.diag() += jitter;
   }
+}
+
+// Invert an SPD matrix in place using Cholesky + POTRI when LAPACK is
+// available. The matrix contents are undefined if this returns false.
+inline bool invert_spd_inplace(arma::mat& A) {
+  if (A.n_rows != A.n_cols) return false;
+  if (A.n_rows == 0) return true;
+#if defined(ARMA_USE_LAPACK)
+  arma::blas_int n = static_cast<arma::blas_int>(A.n_rows);
+  arma::blas_int info = 0;
+  char uplo = 'U';
+  arma::lapack::potrf(&uplo, &n, A.memptr(), &n, &info);
+  if (info != 0) return false;
+  arma::lapack::potri(&uplo, &n, A.memptr(), &n, &info);
+  if (info != 0) return false;
+  copy_upper_to_lower_inplace(A);
+  return A.is_finite();
+#else
+  arma::mat out;
+  if (!arma::inv_sympd(out, A)) return false;
+  A = std::move(out);
+  return A.is_finite();
+#endif
+}
+
+// Convert a precision matrix to partial correlations in place.
+inline bool precision_to_pcor_inplace(arma::mat& Theta) {
+  arma::vec d = Theta.diag();
+  if (d.min() <= 0.0 || !d.is_finite()) return false;
+  d = 1.0 / arma::sqrt(d);
+
+  const arma::uword p = Theta.n_cols;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+  for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
+    const arma::uword uj = static_cast<arma::uword>(j);
+    const double sj = d[uj];
+    for (arma::uword i = 0; i < uj; ++i) {
+      const double val = -Theta(i, uj) * (d[i] * sj);
+      Theta(i, uj) = val;
+      Theta(uj, i) = val;
+    }
+    Theta(uj, uj) = 1.0;
+  }
+  return true;
 }
 
 // Robust inverse of SPD/SPSD with geometric diagonal jitter; SVD fallback.
@@ -620,7 +766,174 @@ inline arma::mat oas_shrink(const arma::mat& cov_mle, double n, double& rho_out)
   return Sigma;
 }
 
+// In-place variant that reuses the covariance work matrix.
+inline void oas_shrink_inplace(arma::mat& cov_mle, double n, double& rho_out) {
+  const arma::uword p = cov_mle.n_cols;
+  const double trS  = arma::trace(cov_mle);
+  const double trS2 = arma::accu(cov_mle % cov_mle);
+  const double mu   = trS / static_cast<double>(p);
+
+  const double pd  = static_cast<double>(p);
+  const double num = (1.0 - 2.0 / pd) * trS2 + trS * trS;
+  const double den = (n + 1.0 - 2.0 / pd) * (trS2 - (trS * trS) / pd);
+
+  double rho = (den > 0.0) ? (num / den) : 1.0;
+  rho = std::max(0.0, std::min(1.0, rho));
+  rho_out = rho;
+
+  cov_mle *= (1.0 - rho);
+  cov_mle.diag() += rho * mu;
+}
+
 } // namespace cov_shrinkage
+
+//------------------------------------------------------------------------------
+// ---------- graphical lasso (complete-data Gaussian case) ----------
+//------------------------------------------------------------------------------
+namespace sparse_precision {
+
+inline double soft_threshold(double z, double rho) noexcept {
+  if (z > rho) return z - rho;
+  if (z < -rho) return z + rho;
+  return 0.0;
+}
+
+// Graphical lasso for a single penalty value on complete Gaussian data.
+// Input S is the MLE covariance (1/n scaling). On success, W is the estimated
+// covariance dual variable and Theta the sparse precision estimate.
+inline bool graphical_lasso(const arma::mat& S,
+                            double rho,
+                            arma::mat& W,
+                            arma::mat& Theta,
+                            arma::uword max_outer = 100,
+                            arma::uword max_inner = 1000,
+                            double tol = 1e-4)
+{
+  const arma::uword p = S.n_cols;
+  if (S.n_rows != p) return false;
+  if (p == 0) {
+    W.reset();
+    Theta.reset();
+    return true;
+  }
+  if (p == 1) {
+    const double d = S(0, 0);
+    if (!(d > 0.0) || !std::isfinite(d)) return false;
+    W.set_size(1, 1);
+    Theta.set_size(1, 1);
+    W(0, 0) = d;
+    Theta(0, 0) = 1.0 / d;
+    return true;
+  }
+
+  W = S;
+  Theta.zeros(p, p);
+  arma::mat Beta(p, p, arma::fill::zeros);
+
+  arma::vec beta(p - 1);
+  arma::vec resid(p - 1);
+  arma::vec w12(p - 1);
+  arma::vec old_w12(p - 1);
+
+  bool converged = false;
+  for (arma::uword outer = 0; outer < max_outer; ++outer) {
+    double max_change = 0.0;
+
+    for (arma::uword j = 0; j < p; ++j) {
+      arma::uword k = 0;
+      for (arma::uword i = 0; i < p; ++i) {
+        if (i == j) continue;
+        beta[k] = Beta(i, j);
+        old_w12[k] = W(i, j);
+        ++k;
+      }
+
+      k = 0;
+      for (arma::uword i = 0; i < p; ++i) {
+        if (i == j) continue;
+        double acc = S(i, j);
+        arma::uword l = 0;
+        for (arma::uword ii = 0; ii < p; ++ii) {
+          if (ii == j) continue;
+          acc -= W(i, ii) * beta[l];
+          ++l;
+        }
+        resid[k] = acc;
+        ++k;
+      }
+
+      for (arma::uword inner = 0; inner < max_inner; ++inner) {
+        double max_delta = 0.0;
+        k = 0;
+        for (arma::uword i = 0; i < p; ++i) {
+          if (i == j) continue;
+          const double old = beta[k];
+          const double denom = W(i, i);
+          if (!(denom > 0.0) || !std::isfinite(denom)) return false;
+          const double c = resid[k] + denom * old;
+          const double neu = soft_threshold(c, rho) / denom;
+          const double delta = neu - old;
+          if (delta != 0.0) {
+            beta[k] = neu;
+            arma::uword l = 0;
+            for (arma::uword ii = 0; ii < p; ++ii) {
+              if (ii == j) continue;
+              resid[l] -= W(ii, i) * delta;
+              ++l;
+            }
+            max_delta = std::max(max_delta, std::abs(delta));
+          }
+          ++k;
+        }
+        if (max_delta < tol) break;
+      }
+
+      w12 = S.col(j);
+      w12.shed_row(j);
+      w12 -= resid;
+
+      k = 0;
+      for (arma::uword i = 0; i < p; ++i) {
+        if (i == j) continue;
+        W(i, j) = w12[k];
+        W(j, i) = w12[k];
+        Beta(i, j) = beta[k];
+        max_change = std::max(max_change, std::abs(w12[k] - old_w12[k]));
+        ++k;
+      }
+    }
+
+    if (max_change < tol) {
+      converged = true;
+      break;
+    }
+  }
+
+  if (!converged) return false;
+
+  Theta.zeros(p, p);
+  for (arma::uword j = 0; j < p; ++j) {
+    double quad = 0.0;
+    arma::uword k = 0;
+    for (arma::uword i = 0; i < p; ++i) {
+      if (i == j) continue;
+      quad += W(i, j) * Beta(i, j);
+      ++k;
+    }
+    const double denom = W(j, j) - quad;
+    if (!(denom > 0.0) || !std::isfinite(denom)) return false;
+    const double theta_jj = 1.0 / denom;
+    Theta(j, j) = theta_jj;
+    for (arma::uword i = 0; i < j; ++i) {
+      Theta(i, j) = -Beta(i, j) * theta_jj;
+      Theta(j, i) = Theta(i, j);
+    }
+  }
+
+  return Theta.is_finite() && W.is_finite();
+}
+
+} // namespace sparse_precision
 
 //------------------------------------------------------------------------------
 // ---------- moments ----------
@@ -937,6 +1250,63 @@ inline double quantile_sorted(const arma::vec &s, double p) {
 //------------------------------------------------------------------------------
 namespace standardise_bicor {
 
+inline double median_inplace(std::vector<double>& values) {
+  const std::size_t n = values.size();
+  if (n == 0) return std::numeric_limits<double>::quiet_NaN();
+
+  const std::size_t mid = n / 2;
+  auto begin = values.begin();
+  auto mid_it = begin + static_cast<std::ptrdiff_t>(mid);
+  auto end = values.end();
+
+  std::nth_element(begin, mid_it, end);
+  const double hi = *mid_it;
+  if ((n & 1u) != 0u) return hi;
+
+  const double lo = *std::max_element(begin, mid_it);
+  return 0.5 * (lo + hi);
+}
+
+inline double quantile_sorted_std(const std::vector<double>& sorted, double p) {
+  const std::size_t n = sorted.size();
+  if (n == 0) return std::numeric_limits<double>::quiet_NaN();
+  if (p <= 0.0) return sorted.front();
+  if (p >= 1.0) return sorted.back();
+
+  const double pos = p * static_cast<double>(n - 1);
+  const std::size_t lo = static_cast<std::size_t>(std::floor(pos));
+  const std::size_t hi = static_cast<std::size_t>(std::ceil(pos));
+  const double frac = pos - static_cast<double>(lo);
+  return (1.0 - frac) * sorted[lo] + frac * sorted[hi];
+}
+
+inline bool standardise_pearson_column(const arma::vec& x, arma::vec& z) {
+  const std::size_t n = x.n_elem;
+  if (z.n_elem != n) z.set_size(n);
+
+  const double* x_ptr = x.memptr();
+  double sum = 0.0;
+  for (std::size_t i = 0; i < n; ++i) sum += x_ptr[i];
+  const double mu = sum / static_cast<double>(n);
+
+  double denom2 = 0.0;
+  double* z_ptr = z.memptr();
+  for (std::size_t i = 0; i < n; ++i) {
+    const double centered = x_ptr[i] - mu;
+    z_ptr[i] = centered;
+    denom2 += centered * centered;
+  }
+
+  if (!(denom2 > 0.0)) {
+    z.fill(arma::datum::nan);
+    return false;
+  }
+
+  const double inv_norm = 1.0 / std::sqrt(denom2);
+  for (std::size_t i = 0; i < n; ++i) z_ptr[i] *= inv_norm;
+  return true;
+}
+
 // Standardise one column with *weights* (no NA, already subset if needed).
 inline void standardise_bicor_column_weighted(const arma::vec& x,
                                               const arma::vec& wobs,
@@ -1052,86 +1422,73 @@ inline void standardise_bicor_column(const arma::vec& x,
   if (z.n_elem != n) z.set_size(n);
   z.zeros();
   col_is_valid = false;
+  const double* x_ptr = x.memptr();
+  double* z_ptr = z.memptr();
 
   // Force Pearson for this column
   if (pearson_fallback_mode == 2) {
-    const double mu = arma::mean(x);
-    arma::vec centered = x - mu;
-    const double denom2 = arma::dot(centered, centered);
-    if (denom2 > 0.0) {
-      z = centered / std::sqrt(denom2);
-      col_is_valid = true;
-    } else {
-      z.fill(arma::datum::nan);
-    }
+    col_is_valid = standardise_pearson_column(x, z);
     return;
   }
 
-  // Median and MAD (use sorted copies for determinism)
-  arma::vec xc = arma::sort(x);
-  const double med = arma::median(xc);
-  arma::vec absdev = arma::abs(x - med);
-  const double mad = arma::median(arma::sort(absdev));
+  std::vector<double> work(n);
+  for (std::size_t i = 0; i < n; ++i) work[i] = x_ptr[i];
+  const double med = median_inplace(work);
+
+  for (std::size_t i = 0; i < n; ++i) work[i] = std::abs(x_ptr[i] - med);
+  const double mad = median_inplace(work);
 
   // If MAD == 0, either NA or Pearson fallback
   if (!(mad > 0.0)) {
     if (pearson_fallback_mode == 0) { z.fill(arma::datum::nan); return; }
-    const double mu = arma::mean(x);
-    arma::vec centered = x - mu;
-    const double denom2 = arma::dot(centered, centered);
-    if (!(denom2 > 0.0)) { z.fill(arma::datum::nan); return; }
-    z = centered / std::sqrt(denom2);
-    col_is_valid = true;
+    col_is_valid = standardise_pearson_column(x, z);
     return;
   }
 
   // Side-cap quantiles so chosen tails map to |u| = 1 (Langfelder & Horvath)
   double scale_neg = 1.0, scale_pos = 1.0;
   if (maxPOutliers < 1.0) {
-    const double qL = matrixCorr_detail::quantile_utils::quantile_sorted(xc, maxPOutliers);
-    const double qU = matrixCorr_detail::quantile_utils::quantile_sorted(xc, 1.0 - maxPOutliers);
+    for (std::size_t i = 0; i < n; ++i) work[i] = x_ptr[i];
+    std::sort(work.begin(), work.end());
+    const double qL = quantile_sorted_std(work, maxPOutliers);
+    const double qU = quantile_sorted_std(work, 1.0 - maxPOutliers);
     const double uL = (qL - med) / (c_const * mad);
     const double uU = (qU - med) / (c_const * mad);
     if (std::abs(uL) > 1.0) scale_neg = std::abs(uL);
     if (std::abs(uU) > 1.0) scale_pos = std::abs(uU);
   }
 
-  arma::vec xm = x - med;
-  arma::vec u  = xm / (c_const * mad);
-  if (maxPOutliers < 1.0 && (scale_neg > 1.0 || scale_pos > 1.0)) {
-    for (std::size_t i = 0; i < n; ++i) {
-      if (xm[i] < 0.0)      u[i] /= scale_neg;
-      else if (xm[i] > 0.0) u[i] /= scale_pos;
-    }
-  }
-
-  arma::vec w(n, arma::fill::zeros);
+  const double inv_cmad = 1.0 / (c_const * mad);
+  const bool use_side_cap = maxPOutliers < 1.0 && (scale_neg > 1.0 || scale_pos > 1.0);
+  double denom2 = 0.0;
   for (std::size_t i = 0; i < n; ++i) {
-    const double a = u[i];
-    if (std::abs(a) < 1.0) {
-      const double t = (1.0 - a*a);
-      w[i] = t * t;
+    const double xm = x_ptr[i] - med;
+    double u = xm * inv_cmad;
+    if (use_side_cap) {
+      if (xm < 0.0) u /= scale_neg;
+      else if (xm > 0.0) u /= scale_pos;
     }
-  }
-  arma::vec r = xm % w;
 
-  const double denom2 = arma::dot(r, r);
+    double zi = 0.0;
+    if (std::abs(u) < 1.0) {
+      const double t = 1.0 - u * u;
+      zi = xm * t * t;
+    }
+    z_ptr[i] = zi;
+    denom2 += zi * zi;
+  }
+
   if (!(denom2 > 0.0)) {
     if (pearson_fallback_mode >= 1) {
-      const double mu = arma::mean(x);
-      arma::vec centered = x - mu;
-      const double d2 = arma::dot(centered, centered);
-      if (d2 > 0.0) {
-        z = centered / std::sqrt(d2);
-        col_is_valid = true;
-        return;
-      }
+      col_is_valid = standardise_pearson_column(x, z);
+      if (col_is_valid) return;
     }
     z.fill(arma::datum::nan);
     return;
   }
 
-  z = r / std::sqrt(denom2);
+  const double inv_norm = 1.0 / std::sqrt(denom2);
+  for (std::size_t i = 0; i < n; ++i) z_ptr[i] *= inv_norm;
   col_is_valid = true;
 }
 

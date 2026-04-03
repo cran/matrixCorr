@@ -4,11 +4,23 @@
 \alias{pearson_corr}
 \alias{print.pearson_corr}
 \alias{plot.pearson_corr}
+\alias{summary.pearson_corr}
+\alias{print.summary.pearson_corr}
 \title{Pairwise Pearson correlation}
 \usage{
-pearson_corr(data, check_na = TRUE)
+pearson_corr(data, check_na = TRUE, ci = FALSE, conf_level = 0.95)
 
-\method{print}{pearson_corr}(x, digits = 4, max_rows = NULL, max_cols = NULL, ...)
+\method{print}{pearson_corr}(
+  x,
+  digits = 4,
+  n = NULL,
+  topn = NULL,
+  max_vars = NULL,
+  width = NULL,
+  ci_digits = 3,
+  show_ci = NULL,
+  ...
+)
 
 \method{plot}{pearson_corr}(
   x,
@@ -17,6 +29,30 @@ pearson_corr(data, check_na = TRUE)
   high_color = "steelblue1",
   mid_color = "white",
   value_text_size = 4,
+  ci_text_size = 3,
+  show_value = TRUE,
+  ...
+)
+
+\method{summary}{pearson_corr}(
+  object,
+  n = NULL,
+  topn = NULL,
+  max_vars = NULL,
+  width = NULL,
+  ci_digits = 3,
+  show_ci = NULL,
+  ...
+)
+
+\method{print}{summary.pearson_corr}(
+  x,
+  digits = NULL,
+  n = NULL,
+  topn = NULL,
+  max_vars = NULL,
+  width = NULL,
+  show_ci = NULL,
   ...
 )
 }
@@ -29,15 +65,30 @@ at least two non-missing values.}
 free of \code{NA}/\code{NaN}/\code{Inf}. Set to \code{FALSE} only when the
 caller already handled missingness.}
 
-\item{x}{An object of class \code{pearson_corr}.}
+\item{ci}{Logical (default \code{FALSE}). If \code{TRUE}, attach pairwise
+Fisher-\eqn{z} confidence intervals for the off-diagonal Pearson
+correlations.}
+
+\item{conf_level}{Confidence level used when \code{ci = TRUE}. Default is
+\code{0.95}.}
+
+\item{x}{An object of class \code{summary.pearson_corr}.}
 
 \item{digits}{Integer; number of decimal places to print in the concordance}
 
-\item{max_rows}{Optional integer; maximum number of rows to display.
-If \code{NULL}, all rows are shown.}
+\item{n}{Optional row threshold for compact preview output.}
 
-\item{max_cols}{Optional integer; maximum number of columns to display.
-If \code{NULL}, all columns are shown.}
+\item{topn}{Optional number of leading/trailing rows to show when truncated.}
+
+\item{max_vars}{Optional maximum number of visible columns; \code{NULL} derives this
+from console width.}
+
+\item{width}{Optional display width; defaults to \code{getOption("width")}.}
+
+\item{ci_digits}{Integer; digits for Pearson confidence limits in the
+pairwise summary.}
+
+\item{show_ci}{One of \code{"yes"} or \code{"no"}.}
 
 \item{...}{Additional arguments passed to \code{ggplot2::theme()} or other
 \code{ggplot2} layers.}
@@ -54,30 +105,30 @@ If \code{NULL}, all columns are shown.}
 
 \item{value_text_size}{Font size for displaying correlation values. Default
 is \code{4}.}
+
+\item{ci_text_size}{Text size for confidence intervals in the heatmap.}
+
+\item{show_value}{Logical; if \code{TRUE} (default), overlay numeric values
+on the heatmap tiles.}
+
+\item{object}{An object of class \code{pearson_corr}.}
 }
 \value{
 A symmetric numeric matrix where the \code{(i, j)}-th element is
 the Pearson correlation between the \code{i}-th and \code{j}-th
-numeric columns of the input.
+numeric columns of the input. When \code{ci = TRUE}, the object also
+carries a \code{ci} attribute with elements \code{est}, \code{lwr.ci},
+\code{upr.ci}, and \code{conf.level}. When pairwise-complete evaluation is
+used, pairwise sample sizes are stored in \code{attr(x, "diagnostics")$n_complete}.
 
 Invisibly returns the \code{pearson_corr} object.
 
 A \code{ggplot} object representing the heatmap.
 }
 \description{
-Computes all pairwise Pearson correlation coefficients for the numeric
-columns of a matrix or data frame using a high-performance 'C++'
-backend.
-
-This function uses a direct Pearson formula implementation in 'C++' to
-achieve fast and scalable correlation computations, especially for
-large datasets.
-
-Prints a summary of the Pearson correlation matrix,
-including description and method metadata.
-
-Generates a ggplot2-based heatmap of the Pearson correlation
-matrix.
+Computes pairwise Pearson correlations for the numeric columns of a matrix
+or data frame using a high-performance 'C++' backend. Optional Fisher-z
+confidence intervals are available.
 }
 \details{
 Let \eqn{X \in \mathbb{R}^{n \times p}} be a
@@ -109,9 +160,24 @@ on the covariance diagonal due to floating-point rounding are truncated to
 zero before taking square roots.
 
 If a variable has zero variance (\eqn{s_i = 0}), the
-corresponding row and column of \eqn{R} are set to \code{NA}. No missing
-values are permitted in \eqn{X}; columns must have at least two distinct,
-non-missing values.
+corresponding row and column of \eqn{R} are set to \code{NA}. When
+\code{check_na = FALSE}, each \eqn{(i,j)} correlation is recomputed on the
+pairwise complete-case overlap of columns \eqn{i} and \eqn{j}.
+
+When \code{ci = TRUE}, Fisher-\eqn{z} confidence intervals are computed from
+the observed pairwise Pearson correlation \eqn{r_{ij}} and the pairwise
+complete-case sample size \eqn{n_{ij}}:
+\deqn{
+z_{ij} = \operatorname{atanh}(r_{ij}), \qquad
+\operatorname{SE}(z_{ij}) = \frac{1}{\sqrt{n_{ij} - 3}}.
+}
+With \eqn{z_{1-\alpha/2} = \Phi^{-1}(1 - \alpha/2)}, the confidence limits are
+\deqn{
+\tanh\!\bigl(z_{ij} - z_{1-\alpha/2}\operatorname{SE}(z_{ij})\bigr)
+\;\;\text{and}\;\;
+\tanh\!\bigl(z_{ij} + z_{1-\alpha/2}\operatorname{SE}(z_{ij})\bigr).
+}
+Confidence intervals are reported only when \eqn{n_{ij} > 3}.
 
 \strong{Computational complexity.} The dominant cost is \eqn{O(n p^2)} flops
 with \eqn{O(p^2)} memory.
@@ -133,6 +199,7 @@ colnames(X) <- paste0("V", seq_len(p))
 
 pr <- pearson_corr(X)
 print(pr, digits = 2)
+summary(pr)
 plot(pr)
 
 ## Compare the sample estimate to the truth

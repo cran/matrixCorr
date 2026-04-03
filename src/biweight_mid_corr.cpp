@@ -6,9 +6,7 @@
 #include <limits>     // for std::numeric_limits
 #include <cmath>      // for std::floor, std::ceil
 #include <algorithm>  // for std::max
-#ifdef _OPENMP
-#include <omp.h>
-#endif
+#include "matrixCorr_omp.h"
 
 // only what we use from matrixCorr_detail
 #include "matrixCorr_detail.h"
@@ -46,7 +44,7 @@ arma::mat bicor_matrix_cpp(const arma::mat &X,
 
   // Standardised columns
   arma::mat Z(n, p, fill::zeros);
-  std::vector<bool> col_valid(p, false);
+  std::vector<unsigned char> col_valid(p, 0);
 
   // Standardise each column in parallel
 #ifdef _OPENMP
@@ -55,34 +53,25 @@ arma::mat bicor_matrix_cpp(const arma::mat &X,
 #endif
   for (std::ptrdiff_t j = 0; j < static_cast<std::ptrdiff_t>(p); ++j) {
     bool ok = false;
-    arma::vec zcol(n, fill::zeros);
+    arma::vec zcol(Z.colptr(static_cast<arma::uword>(j)), n, false, true);
     standardise_bicor_column(X.col(j), zcol, pearson_fallback, c_const, maxPOutliers, ok);
-    Z.col(j) = zcol;
-    col_valid[static_cast<std::size_t>(j)] = ok;
+    col_valid[static_cast<std::size_t>(j)] = ok ? 1u : 0u;
   }
 
   // Correlation matrix R = Z'Z
-  arma::mat R(p, p, fill::zeros);
-
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic)
-#endif
-  for (std::ptrdiff_t j = 0; j < static_cast<std::ptrdiff_t>(p); ++j) {
-    for (std::size_t k = static_cast<std::size_t>(j); k < p; ++k) {
-      double val = arma::dot(Z.col(j), Z.col(k));
-      // Clamp to [-1, 1] if finite
-      if (std::isfinite(val)) {
-        if (val > 1.0) val = 1.0;
-        else if (val < -1.0) val = -1.0;
-      }
-      R(j, k) = val;
-      if (k != static_cast<std::size_t>(j)) R(k, j) = val;
+  arma::mat R = Z.t() * Z;
+  double* r_ptr = R.memptr();
+  for (arma::uword idx = 0; idx < R.n_elem; ++idx) {
+    double& val = r_ptr[idx];
+    if (std::isfinite(val)) {
+      if (val > 1.0) val = 1.0;
+      else if (val < -1.0) val = -1.0;
     }
   }
 
   // Mark invalid columns as NA, others keep unit diagonal
   for (std::size_t j = 0; j < p; ++j) {
-    if (!col_valid[j]) {
+    if (col_valid[j] == 0u) {
       R.row(j).fill(arma::datum::nan);
       R.col(j).fill(arma::datum::nan);
       R(j, j) = 1.0;
@@ -229,7 +218,7 @@ arma::mat bicor_matrix_weighted_cpp(const arma::mat &X,
   if (!w.is_finite() || arma::any(w < 0)) stop("Weights must be finite and non-negative.");
 
   arma::mat Z(n, p, arma::fill::zeros);
-  std::vector<bool> col_valid(p, false);
+  std::vector<unsigned char> col_valid(p, 0);
 
 #ifdef _OPENMP
   omp_set_num_threads(std::max(1, n_threads));
@@ -237,29 +226,22 @@ arma::mat bicor_matrix_weighted_cpp(const arma::mat &X,
 #endif
   for (std::ptrdiff_t j = 0; j < static_cast<std::ptrdiff_t>(p); ++j) {
     bool ok = false;
-    arma::vec zcol(n, arma::fill::zeros);
+    arma::vec zcol(Z.colptr(static_cast<arma::uword>(j)), n, false, true);
     standardise_bicor_column_weighted(X.col(j), w, zcol, pearson_fallback, c_const, maxPOutliers, ok);
-    Z.col(j) = zcol;
-    col_valid[static_cast<std::size_t>(j)] = ok;
+    col_valid[static_cast<std::size_t>(j)] = ok ? 1u : 0u;
   }
 
-  arma::mat R(p, p, arma::fill::zeros);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic)
-#endif
-  for (std::ptrdiff_t j = 0; j < static_cast<std::ptrdiff_t>(p); ++j) {
-    for (std::size_t k = static_cast<std::size_t>(j); k < p; ++k) {
-      double val = arma::dot(Z.col(j), Z.col(k));
-      if (std::isfinite(val)) {
-        if (val > 1.0) val = 1.0;
-        else if (val < -1.0) val = -1.0;
-      }
-      R(j, k) = val;
-      if (k != static_cast<std::size_t>(j)) R(k, j) = val;
+  arma::mat R = Z.t() * Z;
+  double* r_ptr = R.memptr();
+  for (arma::uword idx = 0; idx < R.n_elem; ++idx) {
+    double& val = r_ptr[idx];
+    if (std::isfinite(val)) {
+      if (val > 1.0) val = 1.0;
+      else if (val < -1.0) val = -1.0;
     }
   }
   for (std::size_t j = 0; j < p; ++j) {
-    if (col_valid[j]) {
+    if (col_valid[j] != 0u) {
       R(j, j) = 1.0;
     } else {
       R.row(j).fill(arma::datum::nan);

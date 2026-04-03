@@ -91,17 +91,17 @@ BEGIN_RCPP
 END_RCPP
 }
 // bland_altman_cpp
-List bland_altman_cpp(NumericVector group1, NumericVector group2, double two, int mode, double conf_level);
-RcppExport SEXP _matrixCorr_bland_altman_cpp(SEXP group1SEXP, SEXP group2SEXP, SEXP twoSEXP, SEXP modeSEXP, SEXP conf_levelSEXP) {
+List bland_altman_cpp(NumericVector group1, NumericVector group2, double loa_multiplier, int mode, double conf_level);
+RcppExport SEXP _matrixCorr_bland_altman_cpp(SEXP group1SEXP, SEXP group2SEXP, SEXP loa_multiplierSEXP, SEXP modeSEXP, SEXP conf_levelSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< NumericVector >::type group1(group1SEXP);
     Rcpp::traits::input_parameter< NumericVector >::type group2(group2SEXP);
-    Rcpp::traits::input_parameter< double >::type two(twoSEXP);
+    Rcpp::traits::input_parameter< double >::type loa_multiplier(loa_multiplierSEXP);
     Rcpp::traits::input_parameter< int >::type mode(modeSEXP);
     Rcpp::traits::input_parameter< double >::type conf_level(conf_levelSEXP);
-    rcpp_result_gen = Rcpp::wrap(bland_altman_cpp(group1, group2, two, mode, conf_level));
+    rcpp_result_gen = Rcpp::wrap(bland_altman_cpp(group1, group2, loa_multiplier, mode, conf_level));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -115,9 +115,34 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// ba_rm_slope_scale_cpp
+Rcpp::List ba_rm_slope_scale_cpp(Rcpp::NumericVector mean_values);
+RcppExport SEXP _matrixCorr_ba_rm_slope_scale_cpp(SEXP mean_valuesSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mean_values(mean_valuesSEXP);
+    rcpp_result_gen = Rcpp::wrap(ba_rm_slope_scale_cpp(mean_values));
+    return rcpp_result_gen;
+END_RCPP
+}
+// ba_rm_complete_pairs_cpp
+int ba_rm_complete_pairs_cpp(const NumericVector& y, const IntegerVector& subject, const IntegerVector& method, const IntegerVector& time);
+RcppExport SEXP _matrixCorr_ba_rm_complete_pairs_cpp(SEXP ySEXP, SEXP subjectSEXP, SEXP methodSEXP, SEXP timeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericVector& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type subject(subjectSEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type method(methodSEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type time(timeSEXP);
+    rcpp_result_gen = Rcpp::wrap(ba_rm_complete_pairs_cpp(y, subject, method, time));
+    return rcpp_result_gen;
+END_RCPP
+}
 // bland_altman_repeated_em_ext_cpp
-Rcpp::List bland_altman_repeated_em_ext_cpp(Rcpp::NumericVector y, Rcpp::IntegerVector subject, Rcpp::IntegerVector method, Rcpp::IntegerVector time, bool include_slope, bool use_ar1, double ar1_rho, int max_iter, double tol, double conf_level, double two_arg, bool use_cov_su_se);
-RcppExport SEXP _matrixCorr_bland_altman_repeated_em_ext_cpp(SEXP ySEXP, SEXP subjectSEXP, SEXP methodSEXP, SEXP timeSEXP, SEXP include_slopeSEXP, SEXP use_ar1SEXP, SEXP ar1_rhoSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP conf_levelSEXP, SEXP two_argSEXP, SEXP use_cov_su_seSEXP) {
+Rcpp::List bland_altman_repeated_em_ext_cpp(Rcpp::NumericVector y, Rcpp::IntegerVector subject, Rcpp::IntegerVector method, Rcpp::IntegerVector time, bool include_slope, bool use_ar1, double ar1_rho, int max_iter, double tol, double conf_level, double loa_multiplier_arg, bool use_cov_su_se);
+RcppExport SEXP _matrixCorr_bland_altman_repeated_em_ext_cpp(SEXP ySEXP, SEXP subjectSEXP, SEXP methodSEXP, SEXP timeSEXP, SEXP include_slopeSEXP, SEXP use_ar1SEXP, SEXP ar1_rhoSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP conf_levelSEXP, SEXP loa_multiplier_argSEXP, SEXP use_cov_su_seSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -131,16 +156,16 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
     Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< double >::type conf_level(conf_levelSEXP);
-    Rcpp::traits::input_parameter< double >::type two_arg(two_argSEXP);
+    Rcpp::traits::input_parameter< double >::type loa_multiplier_arg(loa_multiplier_argSEXP);
     Rcpp::traits::input_parameter< bool >::type use_cov_su_se(use_cov_su_seSEXP);
-    rcpp_result_gen = Rcpp::wrap(bland_altman_repeated_em_ext_cpp(y, subject, method, time, include_slope, use_ar1, ar1_rho, max_iter, tol, conf_level, two_arg, use_cov_su_se));
+    rcpp_result_gen = Rcpp::wrap(bland_altman_repeated_em_ext_cpp(y, subject, method, time, include_slope, use_ar1, ar1_rho, max_iter, tol, conf_level, loa_multiplier_arg, use_cov_su_se));
     return rcpp_result_gen;
 END_RCPP
 }
 // cccUst_rcpp
 List cccUst_rcpp(NumericVector y_vec, IntegerVector met_vec, IntegerVector time_vec, IntegerVector subj_vec, int nmet0, int nmet1, int ntime, int ns, NumericMatrix Dmat, double delta, double cl);
 RcppExport SEXP _matrixCorr_cccUst_rcpp(SEXP y_vecSEXP, SEXP met_vecSEXP, SEXP time_vecSEXP, SEXP subj_vecSEXP, SEXP nmet0SEXP, SEXP nmet1SEXP, SEXP ntimeSEXP, SEXP nsSEXP, SEXP DmatSEXP, SEXP deltaSEXP, SEXP clSEXP) {
-    BEGIN_RCPP
+BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< NumericVector >::type y_vec(y_vecSEXP);
@@ -156,7 +181,7 @@ RcppExport SEXP _matrixCorr_cccUst_rcpp(SEXP y_vecSEXP, SEXP met_vecSEXP, SEXP t
     Rcpp::traits::input_parameter< double >::type cl(clSEXP);
     rcpp_result_gen = Rcpp::wrap(cccUst_rcpp(y_vec, met_vec, time_vec, subj_vec, nmet0, nmet1, ntime, ns, Dmat, delta, cl));
     return rcpp_result_gen;
-    END_RCPP
+END_RCPP
 }
 // set_omp_threads
 void set_omp_threads(const int n);
@@ -337,9 +362,23 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// kendall_matrix_pairwise_cpp
+Rcpp::List kendall_matrix_pairwise_cpp(SEXP X_, const bool return_ci, const double conf_level, const std::string ci_method);
+RcppExport SEXP _matrixCorr_kendall_matrix_pairwise_cpp(SEXP X_SEXP, SEXP return_ciSEXP, SEXP conf_levelSEXP, SEXP ci_methodSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type X_(X_SEXP);
+    Rcpp::traits::input_parameter< const bool >::type return_ci(return_ciSEXP);
+    Rcpp::traits::input_parameter< const double >::type conf_level(conf_levelSEXP);
+    Rcpp::traits::input_parameter< const std::string >::type ci_method(ci_methodSEXP);
+    rcpp_result_gen = Rcpp::wrap(kendall_matrix_pairwise_cpp(X_, return_ci, conf_level, ci_method));
+    return rcpp_result_gen;
+END_RCPP
+}
 // partial_correlation_cpp
-Rcpp::List partial_correlation_cpp(SEXP X_, const std::string method, const double lambda, const bool return_cov_precision);
-RcppExport SEXP _matrixCorr_partial_correlation_cpp(SEXP X_SEXP, SEXP methodSEXP, SEXP lambdaSEXP, SEXP return_cov_precisionSEXP) {
+Rcpp::List partial_correlation_cpp(SEXP X_, const std::string method, const double lambda, const bool return_cov_precision, const bool return_p_value);
+RcppExport SEXP _matrixCorr_partial_correlation_cpp(SEXP X_SEXP, SEXP methodSEXP, SEXP lambdaSEXP, SEXP return_cov_precisionSEXP, SEXP return_p_valueSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -347,7 +386,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const std::string >::type method(methodSEXP);
     Rcpp::traits::input_parameter< const double >::type lambda(lambdaSEXP);
     Rcpp::traits::input_parameter< const bool >::type return_cov_precision(return_cov_precisionSEXP);
-    rcpp_result_gen = Rcpp::wrap(partial_correlation_cpp(X_, method, lambda, return_cov_precision));
+    Rcpp::traits::input_parameter< const bool >::type return_p_value(return_p_valueSEXP);
+    rcpp_result_gen = Rcpp::wrap(partial_correlation_cpp(X_, method, lambda, return_cov_precision, return_p_value));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -359,6 +399,128 @@ BEGIN_RCPP
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< SEXP >::type X_(X_SEXP);
     rcpp_result_gen = Rcpp::wrap(pearson_matrix_cpp(X_));
+    return rcpp_result_gen;
+END_RCPP
+}
+// pearson_matrix_pairwise_cpp
+Rcpp::List pearson_matrix_pairwise_cpp(SEXP X_, const bool return_ci, const double conf_level);
+RcppExport SEXP _matrixCorr_pearson_matrix_pairwise_cpp(SEXP X_SEXP, SEXP return_ciSEXP, SEXP conf_levelSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type X_(X_SEXP);
+    Rcpp::traits::input_parameter< const bool >::type return_ci(return_ciSEXP);
+    Rcpp::traits::input_parameter< const double >::type conf_level(conf_levelSEXP);
+    rcpp_result_gen = Rcpp::wrap(pearson_matrix_pairwise_cpp(X_, return_ci, conf_level));
+    return rcpp_result_gen;
+END_RCPP
+}
+// rmcorr_pair_cpp
+List rmcorr_pair_cpp(NumericVector x, NumericVector y, IntegerVector subject, double conf_level);
+RcppExport SEXP _matrixCorr_rmcorr_pair_cpp(SEXP xSEXP, SEXP ySEXP, SEXP subjectSEXP, SEXP conf_levelSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type x(xSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type subject(subjectSEXP);
+    Rcpp::traits::input_parameter< double >::type conf_level(conf_levelSEXP);
+    rcpp_result_gen = Rcpp::wrap(rmcorr_pair_cpp(x, y, subject, conf_level));
+    return rcpp_result_gen;
+END_RCPP
+}
+// rmcorr_matrix_cpp
+List rmcorr_matrix_cpp(NumericMatrix x, NumericMatrix y, IntegerVector subject, bool symmetric, double conf_level, int n_threads);
+RcppExport SEXP _matrixCorr_rmcorr_matrix_cpp(SEXP xSEXP, SEXP ySEXP, SEXP subjectSEXP, SEXP symmetricSEXP, SEXP conf_levelSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericMatrix >::type x(xSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type y(ySEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type subject(subjectSEXP);
+    Rcpp::traits::input_parameter< bool >::type symmetric(symmetricSEXP);
+    Rcpp::traits::input_parameter< double >::type conf_level(conf_levelSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(rmcorr_matrix_cpp(x, y, subject, symmetric, conf_level, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// pbcor_matrix_cpp
+arma::mat pbcor_matrix_cpp(const arma::mat& X, const double beta, const int n_threads);
+RcppExport SEXP _matrixCorr_pbcor_matrix_cpp(SEXP XSEXP, SEXP betaSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const double >::type beta(betaSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(pbcor_matrix_cpp(X, beta, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// pbcor_matrix_pairwise_cpp
+arma::mat pbcor_matrix_pairwise_cpp(const arma::mat& X, const double beta, const int min_n, const int n_threads);
+RcppExport SEXP _matrixCorr_pbcor_matrix_pairwise_cpp(SEXP XSEXP, SEXP betaSEXP, SEXP min_nSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const double >::type beta(betaSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_n(min_nSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(pbcor_matrix_pairwise_cpp(X, beta, min_n, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// wincor_matrix_cpp
+arma::mat wincor_matrix_cpp(const arma::mat& X, const double tr, const int n_threads);
+RcppExport SEXP _matrixCorr_wincor_matrix_cpp(SEXP XSEXP, SEXP trSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const double >::type tr(trSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(wincor_matrix_cpp(X, tr, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// wincor_matrix_pairwise_cpp
+arma::mat wincor_matrix_pairwise_cpp(const arma::mat& X, const double tr, const int min_n, const int n_threads);
+RcppExport SEXP _matrixCorr_wincor_matrix_pairwise_cpp(SEXP XSEXP, SEXP trSEXP, SEXP min_nSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const double >::type tr(trSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_n(min_nSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(wincor_matrix_pairwise_cpp(X, tr, min_n, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// skipcor_matrix_cpp
+Rcpp::List skipcor_matrix_cpp(const arma::mat& X, const int method_int, const bool stand, const bool use_mad, const double gval, const int min_n, const int n_threads, const bool return_masks, const bool return_inference, const double conf_level, const int n_boot, const int seed, const int multiple_method_int, const double fwe_level, const int n_mc);
+RcppExport SEXP _matrixCorr_skipcor_matrix_cpp(SEXP XSEXP, SEXP method_intSEXP, SEXP standSEXP, SEXP use_madSEXP, SEXP gvalSEXP, SEXP min_nSEXP, SEXP n_threadsSEXP, SEXP return_masksSEXP, SEXP return_inferenceSEXP, SEXP conf_levelSEXP, SEXP n_bootSEXP, SEXP seedSEXP, SEXP multiple_method_intSEXP, SEXP fwe_levelSEXP, SEXP n_mcSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const int >::type method_int(method_intSEXP);
+    Rcpp::traits::input_parameter< const bool >::type stand(standSEXP);
+    Rcpp::traits::input_parameter< const bool >::type use_mad(use_madSEXP);
+    Rcpp::traits::input_parameter< const double >::type gval(gvalSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_n(min_nSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< const bool >::type return_masks(return_masksSEXP);
+    Rcpp::traits::input_parameter< const bool >::type return_inference(return_inferenceSEXP);
+    Rcpp::traits::input_parameter< const double >::type conf_level(conf_levelSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_boot(n_bootSEXP);
+    Rcpp::traits::input_parameter< const int >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< const int >::type multiple_method_int(multiple_method_intSEXP);
+    Rcpp::traits::input_parameter< const double >::type fwe_level(fwe_levelSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_mc(n_mcSEXP);
+    rcpp_result_gen = Rcpp::wrap(skipcor_matrix_cpp(X, method_int, stand, use_mad, gval, min_n, n_threads, return_masks, return_inference, conf_level, n_boot, seed, multiple_method_int, fwe_level, n_mc));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -384,6 +546,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// spearman_matrix_pairwise_cpp
+Rcpp::List spearman_matrix_pairwise_cpp(SEXP X_, const bool return_ci, const double conf_level);
+RcppExport SEXP _matrixCorr_spearman_matrix_pairwise_cpp(SEXP X_SEXP, SEXP return_ciSEXP, SEXP conf_levelSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type X_(X_SEXP);
+    Rcpp::traits::input_parameter< const bool >::type return_ci(return_ciSEXP);
+    Rcpp::traits::input_parameter< const double >::type conf_level(conf_levelSEXP);
+    rcpp_result_gen = Rcpp::wrap(spearman_matrix_pairwise_cpp(X_, return_ci, conf_level));
+    return rcpp_result_gen;
+END_RCPP
+}
 // matrixCorr_tetrachoric_mle_cpp
 double matrixCorr_tetrachoric_mle_cpp(Rcpp::NumericMatrix tab, double correct);
 RcppExport SEXP _matrixCorr_matrixCorr_tetrachoric_mle_cpp(SEXP tabSEXP, SEXP correctSEXP) {
@@ -396,6 +571,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// matrixCorr_tetrachoric_fixed_cpp
+double matrixCorr_tetrachoric_fixed_cpp(Rcpp::NumericMatrix tab, double rc, double cc, double correct);
+RcppExport SEXP _matrixCorr_matrixCorr_tetrachoric_fixed_cpp(SEXP tabSEXP, SEXP rcSEXP, SEXP ccSEXP, SEXP correctSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type tab(tabSEXP);
+    Rcpp::traits::input_parameter< double >::type rc(rcSEXP);
+    Rcpp::traits::input_parameter< double >::type cc(ccSEXP);
+    Rcpp::traits::input_parameter< double >::type correct(correctSEXP);
+    rcpp_result_gen = Rcpp::wrap(matrixCorr_tetrachoric_fixed_cpp(tab, rc, cc, correct));
+    return rcpp_result_gen;
+END_RCPP
+}
 // matrixCorr_polychoric_mle_cpp
 double matrixCorr_polychoric_mle_cpp(NumericMatrix tab, double correct);
 RcppExport SEXP _matrixCorr_matrixCorr_polychoric_mle_cpp(SEXP tabSEXP, SEXP correctSEXP) {
@@ -405,6 +594,49 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericMatrix >::type tab(tabSEXP);
     Rcpp::traits::input_parameter< double >::type correct(correctSEXP);
     rcpp_result_gen = Rcpp::wrap(matrixCorr_polychoric_mle_cpp(tab, correct));
+    return rcpp_result_gen;
+END_RCPP
+}
+// matrixCorr_polychoric_fixed_cpp
+double matrixCorr_polychoric_fixed_cpp(NumericMatrix tab, NumericVector rc_in, NumericVector cc_in);
+RcppExport SEXP _matrixCorr_matrixCorr_polychoric_fixed_cpp(SEXP tabSEXP, SEXP rc_inSEXP, SEXP cc_inSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericMatrix >::type tab(tabSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type rc_in(rc_inSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type cc_in(cc_inSEXP);
+    rcpp_result_gen = Rcpp::wrap(matrixCorr_polychoric_fixed_cpp(tab, rc_in, cc_in));
+    return rcpp_result_gen;
+END_RCPP
+}
+// matrixCorr_tetrachoric_matrix_cpp
+NumericMatrix matrixCorr_tetrachoric_matrix_cpp(IntegerMatrix x, NumericVector tau, double correct, bool pairwise_complete);
+RcppExport SEXP _matrixCorr_matrixCorr_tetrachoric_matrix_cpp(SEXP xSEXP, SEXP tauSEXP, SEXP correctSEXP, SEXP pairwise_completeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< IntegerMatrix >::type x(xSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< double >::type correct(correctSEXP);
+    Rcpp::traits::input_parameter< bool >::type pairwise_complete(pairwise_completeSEXP);
+    rcpp_result_gen = Rcpp::wrap(matrixCorr_tetrachoric_matrix_cpp(x, tau, correct, pairwise_complete));
+    return rcpp_result_gen;
+END_RCPP
+}
+// matrixCorr_polychoric_matrix_cpp
+NumericMatrix matrixCorr_polychoric_matrix_cpp(IntegerMatrix x, IntegerVector n_levels, NumericMatrix tau_mat, bool global_all, double correct, bool pairwise_complete);
+RcppExport SEXP _matrixCorr_matrixCorr_polychoric_matrix_cpp(SEXP xSEXP, SEXP n_levelsSEXP, SEXP tau_matSEXP, SEXP global_allSEXP, SEXP correctSEXP, SEXP pairwise_completeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< IntegerMatrix >::type x(xSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type n_levels(n_levelsSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type tau_mat(tau_matSEXP);
+    Rcpp::traits::input_parameter< bool >::type global_all(global_allSEXP);
+    Rcpp::traits::input_parameter< double >::type correct(correctSEXP);
+    Rcpp::traits::input_parameter< bool >::type pairwise_complete(pairwise_completeSEXP);
+    rcpp_result_gen = Rcpp::wrap(matrixCorr_polychoric_matrix_cpp(x, n_levels, tau_mat, global_all, correct, pairwise_complete));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -429,6 +661,20 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type x(xSEXP);
     Rcpp::traits::input_parameter< IntegerVector >::type y(ySEXP);
     rcpp_result_gen = Rcpp::wrap(matrixCorr_polyserial_mle_cpp(x, y));
+    return rcpp_result_gen;
+END_RCPP
+}
+// matrixCorr_polyserial_negloglik_cpp
+double matrixCorr_polyserial_negloglik_cpp(NumericVector z, IntegerVector y, NumericVector pars, double maxcor);
+RcppExport SEXP _matrixCorr_matrixCorr_polyserial_negloglik_cpp(SEXP zSEXP, SEXP ySEXP, SEXP parsSEXP, SEXP maxcorSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type z(zSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type pars(parsSEXP);
+    Rcpp::traits::input_parameter< double >::type maxcor(maxcorSEXP);
+    rcpp_result_gen = Rcpp::wrap(matrixCorr_polyserial_negloglik_cpp(z, y, pars, maxcor));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -465,6 +711,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_matrixCorr_bicor_matrix_weighted_pairwise_cpp", (DL_FUNC) &_matrixCorr_bicor_matrix_weighted_pairwise_cpp, 7},
     {"_matrixCorr_bland_altman_cpp", (DL_FUNC) &_matrixCorr_bland_altman_cpp, 5},
     {"_matrixCorr_ba_openmp_threads", (DL_FUNC) &_matrixCorr_ba_openmp_threads, 0},
+    {"_matrixCorr_ba_rm_slope_scale_cpp", (DL_FUNC) &_matrixCorr_ba_rm_slope_scale_cpp, 1},
+    {"_matrixCorr_ba_rm_complete_pairs_cpp", (DL_FUNC) &_matrixCorr_ba_rm_complete_pairs_cpp, 4},
     {"_matrixCorr_bland_altman_repeated_em_ext_cpp", (DL_FUNC) &_matrixCorr_bland_altman_repeated_em_ext_cpp, 12},
     {"_matrixCorr_cccUst_rcpp", (DL_FUNC) &_matrixCorr_cccUst_rcpp, 11},
     {"_matrixCorr_set_omp_threads", (DL_FUNC) &_matrixCorr_set_omp_threads, 1},
@@ -480,14 +728,29 @@ static const R_CallMethodDef CallEntries[] = {
     {"_matrixCorr_kendall_matrix_cpp", (DL_FUNC) &_matrixCorr_kendall_matrix_cpp, 1},
     {"_matrixCorr_kendall_tau2_cpp", (DL_FUNC) &_matrixCorr_kendall_tau2_cpp, 2},
     {"_matrixCorr_kendall_tau2_from_mat_cpp", (DL_FUNC) &_matrixCorr_kendall_tau2_from_mat_cpp, 1},
-    {"_matrixCorr_partial_correlation_cpp", (DL_FUNC) &_matrixCorr_partial_correlation_cpp, 4},
+    {"_matrixCorr_kendall_matrix_pairwise_cpp", (DL_FUNC) &_matrixCorr_kendall_matrix_pairwise_cpp, 4},
+    {"_matrixCorr_partial_correlation_cpp", (DL_FUNC) &_matrixCorr_partial_correlation_cpp, 5},
     {"_matrixCorr_pearson_matrix_cpp", (DL_FUNC) &_matrixCorr_pearson_matrix_cpp, 1},
+    {"_matrixCorr_pearson_matrix_pairwise_cpp", (DL_FUNC) &_matrixCorr_pearson_matrix_pairwise_cpp, 3},
+    {"_matrixCorr_rmcorr_pair_cpp", (DL_FUNC) &_matrixCorr_rmcorr_pair_cpp, 4},
+    {"_matrixCorr_rmcorr_matrix_cpp", (DL_FUNC) &_matrixCorr_rmcorr_matrix_cpp, 6},
+    {"_matrixCorr_pbcor_matrix_cpp", (DL_FUNC) &_matrixCorr_pbcor_matrix_cpp, 3},
+    {"_matrixCorr_pbcor_matrix_pairwise_cpp", (DL_FUNC) &_matrixCorr_pbcor_matrix_pairwise_cpp, 4},
+    {"_matrixCorr_wincor_matrix_cpp", (DL_FUNC) &_matrixCorr_wincor_matrix_cpp, 3},
+    {"_matrixCorr_wincor_matrix_pairwise_cpp", (DL_FUNC) &_matrixCorr_wincor_matrix_pairwise_cpp, 4},
+    {"_matrixCorr_skipcor_matrix_cpp", (DL_FUNC) &_matrixCorr_skipcor_matrix_cpp, 15},
     {"_matrixCorr_sss_cor_cpp", (DL_FUNC) &_matrixCorr_sss_cor_cpp, 1},
     {"_matrixCorr_spearman_matrix_cpp", (DL_FUNC) &_matrixCorr_spearman_matrix_cpp, 1},
+    {"_matrixCorr_spearman_matrix_pairwise_cpp", (DL_FUNC) &_matrixCorr_spearman_matrix_pairwise_cpp, 3},
     {"_matrixCorr_matrixCorr_tetrachoric_mle_cpp", (DL_FUNC) &_matrixCorr_matrixCorr_tetrachoric_mle_cpp, 2},
+    {"_matrixCorr_matrixCorr_tetrachoric_fixed_cpp", (DL_FUNC) &_matrixCorr_matrixCorr_tetrachoric_fixed_cpp, 4},
     {"_matrixCorr_matrixCorr_polychoric_mle_cpp", (DL_FUNC) &_matrixCorr_matrixCorr_polychoric_mle_cpp, 2},
+    {"_matrixCorr_matrixCorr_polychoric_fixed_cpp", (DL_FUNC) &_matrixCorr_matrixCorr_polychoric_fixed_cpp, 3},
+    {"_matrixCorr_matrixCorr_tetrachoric_matrix_cpp", (DL_FUNC) &_matrixCorr_matrixCorr_tetrachoric_matrix_cpp, 4},
+    {"_matrixCorr_matrixCorr_polychoric_matrix_cpp", (DL_FUNC) &_matrixCorr_matrixCorr_polychoric_matrix_cpp, 6},
     {"_matrixCorr_matrixCorr_biserial_latent_cpp", (DL_FUNC) &_matrixCorr_matrixCorr_biserial_latent_cpp, 2},
     {"_matrixCorr_matrixCorr_polyserial_mle_cpp", (DL_FUNC) &_matrixCorr_matrixCorr_polyserial_mle_cpp, 2},
+    {"_matrixCorr_matrixCorr_polyserial_negloglik_cpp", (DL_FUNC) &_matrixCorr_matrixCorr_polyserial_negloglik_cpp, 4},
     {"_matrixCorr_matrixCorr_polydi_mle_cpp", (DL_FUNC) &_matrixCorr_matrixCorr_polydi_mle_cpp, 2},
     {"_matrixCorr_validate_corr_input_cpp", (DL_FUNC) &_matrixCorr_validate_corr_input_cpp, 2},
     {NULL, NULL, 0}

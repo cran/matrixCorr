@@ -21,16 +21,24 @@ bicor_matrix_weighted_pairwise_cpp <- function(X, w, c_const = 9.0, maxPOutliers
     .Call(`_matrixCorr_bicor_matrix_weighted_pairwise_cpp`, X, w, c_const, maxPOutliers, pearson_fallback, min_n, n_threads)
 }
 
-bland_altman_cpp <- function(group1, group2, two = 1.96, mode = 1L, conf_level = 0.95) {
-    .Call(`_matrixCorr_bland_altman_cpp`, group1, group2, two, mode, conf_level)
+bland_altman_cpp <- function(group1, group2, loa_multiplier = 1.96, mode = 1L, conf_level = 0.95) {
+    .Call(`_matrixCorr_bland_altman_cpp`, group1, group2, loa_multiplier, mode, conf_level)
 }
 
 ba_openmp_threads <- function() {
     .Call(`_matrixCorr_ba_openmp_threads`)
 }
 
-bland_altman_repeated_em_ext_cpp <- function(y, subject, method, time, include_slope = FALSE, use_ar1 = FALSE, ar1_rho = NA_real_, max_iter = 200L, tol = 1e-6, conf_level = 0.95, two_arg = NA_real_, use_cov_su_se = TRUE) {
-    .Call(`_matrixCorr_bland_altman_repeated_em_ext_cpp`, y, subject, method, time, include_slope, use_ar1, ar1_rho, max_iter, tol, conf_level, two_arg, use_cov_su_se)
+ba_rm_slope_scale_cpp <- function(mean_values) {
+    .Call(`_matrixCorr_ba_rm_slope_scale_cpp`, mean_values)
+}
+
+ba_rm_complete_pairs_cpp <- function(y, subject, method, time) {
+    .Call(`_matrixCorr_ba_rm_complete_pairs_cpp`, y, subject, method, time)
+}
+
+bland_altman_repeated_em_ext_cpp <- function(y, subject, method, time, include_slope = FALSE, use_ar1 = FALSE, ar1_rho = NA_real_, max_iter = 200L, tol = 1e-6, conf_level = 0.95, loa_multiplier_arg = NA_real_, use_cov_su_se = TRUE) {
+    .Call(`_matrixCorr_bland_altman_repeated_em_ext_cpp`, y, subject, method, time, include_slope, use_ar1, ar1_rho, max_iter, tol, conf_level, loa_multiplier_arg, use_cov_su_se)
 }
 
 cccUst_rcpp <- function(y_vec, met_vec, time_vec, subj_vec, nmet0, nmet1, ntime, ns, Dmat, delta, cl) {
@@ -89,12 +97,48 @@ kendall_tau2_from_mat_cpp <- function(mat) {
     .Call(`_matrixCorr_kendall_tau2_from_mat_cpp`, mat)
 }
 
-partial_correlation_cpp <- function(X_, method = "oas", lambda = 1e-3, return_cov_precision = TRUE) {
-    .Call(`_matrixCorr_partial_correlation_cpp`, X_, method, lambda, return_cov_precision)
+kendall_matrix_pairwise_cpp <- function(X_, return_ci = FALSE, conf_level = 0.95, ci_method = "fieller") {
+    .Call(`_matrixCorr_kendall_matrix_pairwise_cpp`, X_, return_ci, conf_level, ci_method)
+}
+
+partial_correlation_cpp <- function(X_, method = "sample", lambda = 1e-3, return_cov_precision = TRUE, return_p_value = FALSE) {
+    .Call(`_matrixCorr_partial_correlation_cpp`, X_, method, lambda, return_cov_precision, return_p_value)
 }
 
 pearson_matrix_cpp <- function(X_) {
     .Call(`_matrixCorr_pearson_matrix_cpp`, X_)
+}
+
+pearson_matrix_pairwise_cpp <- function(X_, return_ci = FALSE, conf_level = 0.95) {
+    .Call(`_matrixCorr_pearson_matrix_pairwise_cpp`, X_, return_ci, conf_level)
+}
+
+rmcorr_pair_cpp <- function(x, y, subject, conf_level = 0.95) {
+    .Call(`_matrixCorr_rmcorr_pair_cpp`, x, y, subject, conf_level)
+}
+
+rmcorr_matrix_cpp <- function(x, y, subject, symmetric = FALSE, conf_level = 0.95, n_threads = 1L) {
+    .Call(`_matrixCorr_rmcorr_matrix_cpp`, x, y, subject, symmetric, conf_level, n_threads)
+}
+
+pbcor_matrix_cpp <- function(X, beta = 0.2, n_threads = 1L) {
+    .Call(`_matrixCorr_pbcor_matrix_cpp`, X, beta, n_threads)
+}
+
+pbcor_matrix_pairwise_cpp <- function(X, beta = 0.2, min_n = 5L, n_threads = 1L) {
+    .Call(`_matrixCorr_pbcor_matrix_pairwise_cpp`, X, beta, min_n, n_threads)
+}
+
+wincor_matrix_cpp <- function(X, tr = 0.2, n_threads = 1L) {
+    .Call(`_matrixCorr_wincor_matrix_cpp`, X, tr, n_threads)
+}
+
+wincor_matrix_pairwise_cpp <- function(X, tr = 0.2, min_n = 5L, n_threads = 1L) {
+    .Call(`_matrixCorr_wincor_matrix_pairwise_cpp`, X, tr, min_n, n_threads)
+}
+
+skipcor_matrix_cpp <- function(X, method_int = 0L, stand = TRUE, use_mad = FALSE, gval = 2.717803, min_n = 5L, n_threads = 1L, return_masks = FALSE, return_inference = FALSE, conf_level = 0.95, n_boot = 2000L, seed = 0L, multiple_method_int = 0L, fwe_level = 0.05, n_mc = 1000L) {
+    .Call(`_matrixCorr_skipcor_matrix_cpp`, X, method_int, stand, use_mad, gval, min_n, n_threads, return_masks, return_inference, conf_level, n_boot, seed, multiple_method_int, fwe_level, n_mc)
 }
 
 sss_cor_cpp <- function(X_) {
@@ -105,12 +149,32 @@ spearman_matrix_cpp <- function(X_) {
     .Call(`_matrixCorr_spearman_matrix_cpp`, X_)
 }
 
+spearman_matrix_pairwise_cpp <- function(X_, return_ci = FALSE, conf_level = 0.95) {
+    .Call(`_matrixCorr_spearman_matrix_pairwise_cpp`, X_, return_ci, conf_level)
+}
+
 matrixCorr_tetrachoric_mle_cpp <- function(tab, correct = 0.5) {
     .Call(`_matrixCorr_matrixCorr_tetrachoric_mle_cpp`, tab, correct)
 }
 
+matrixCorr_tetrachoric_fixed_cpp <- function(tab, rc, cc, correct = 0.5) {
+    .Call(`_matrixCorr_matrixCorr_tetrachoric_fixed_cpp`, tab, rc, cc, correct)
+}
+
 matrixCorr_polychoric_mle_cpp <- function(tab, correct = 0.5) {
     .Call(`_matrixCorr_matrixCorr_polychoric_mle_cpp`, tab, correct)
+}
+
+matrixCorr_polychoric_fixed_cpp <- function(tab, rc_in, cc_in) {
+    .Call(`_matrixCorr_matrixCorr_polychoric_fixed_cpp`, tab, rc_in, cc_in)
+}
+
+matrixCorr_tetrachoric_matrix_cpp <- function(x, tau, correct = 0.5, pairwise_complete = TRUE) {
+    .Call(`_matrixCorr_matrixCorr_tetrachoric_matrix_cpp`, x, tau, correct, pairwise_complete)
+}
+
+matrixCorr_polychoric_matrix_cpp <- function(x, n_levels, tau_mat, global_all = FALSE, correct = 0.5, pairwise_complete = TRUE) {
+    .Call(`_matrixCorr_matrixCorr_polychoric_matrix_cpp`, x, n_levels, tau_mat, global_all, correct, pairwise_complete)
 }
 
 matrixCorr_biserial_latent_cpp <- function(x, y) {
@@ -119,6 +183,10 @@ matrixCorr_biserial_latent_cpp <- function(x, y) {
 
 matrixCorr_polyserial_mle_cpp <- function(x, y) {
     .Call(`_matrixCorr_matrixCorr_polyserial_mle_cpp`, x, y)
+}
+
+matrixCorr_polyserial_negloglik_cpp <- function(z, y, pars, maxcor = 0.9999) {
+    .Call(`_matrixCorr_matrixCorr_polyserial_negloglik_cpp`, z, y, pars, maxcor)
 }
 
 matrixCorr_polydi_mle_cpp <- function(tab, correct = 0.5) {
