@@ -5,13 +5,22 @@
 \alias{print.wincor}
 \alias{plot.wincor}
 \alias{summary.wincor}
+\alias{print.summary.wincor}
 \title{Pairwise Winsorized correlation}
 \usage{
 wincor(
   data,
-  tr = 0.2,
   na_method = c("error", "pairwise"),
-  n_threads = getOption("matrixCorr.threads", 1L)
+  ci = FALSE,
+  p_value = FALSE,
+  conf_level = 0.95,
+  n_threads = getOption("matrixCorr.threads", 1L),
+  tr = 0.2,
+  n_boot = 500L,
+  seed = NULL,
+  output = c("matrix", "sparse", "edge_list"),
+  threshold = 0,
+  diag = TRUE
 )
 
 \method{print}{wincor}(
@@ -42,6 +51,19 @@ wincor(
   topn = NULL,
   max_vars = NULL,
   width = NULL,
+  ci_digits = 3,
+  p_digits = 4,
+  show_ci = NULL,
+  ...
+)
+
+\method{print}{summary.wincor}(
+  x,
+  digits = NULL,
+  n = NULL,
+  topn = NULL,
+  max_vars = NULL,
+  width = NULL,
   show_ci = NULL,
   ...
 )
@@ -50,18 +72,56 @@ wincor(
 \item{data}{A numeric matrix or a data frame with at least two numeric
 columns. All non-numeric columns will be excluded.}
 
+\item{na_method}{One of \code{"error"} (default) or \code{"pairwise"}.}
+
+\item{ci}{Logical (default \code{FALSE}). If \code{TRUE}, attach percentile
+bootstrap confidence intervals for each pairwise estimate.}
+
+\item{p_value}{Logical (default \code{FALSE}). If \code{TRUE}, attach the
+method-specific large-sample test statistic and two-sided p-value for each
+pairwise estimate.}
+
+\item{conf_level}{Confidence level used when \code{ci = TRUE}. Default
+\code{0.95}.}
+
+\item{n_threads}{Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
+\code{getOption("matrixCorr.threads", 1L)}.}
+
 \item{tr}{Winsorization proportion in \code{[0, 0.5)}. For a sample of size
 \eqn{n}, let \eqn{g = \lfloor tr \cdot n \rfloor}; the \eqn{g} smallest
 observations are set to the \eqn{(g+1)}-st order statistic and the
 \eqn{g} largest observations are set to the \eqn{(n-g)}-th order
 statistic. Default \code{0.2}.}
 
-\item{na_method}{One of \code{"error"} (default) or \code{"pairwise"}.}
+\item{n_boot}{Integer \eqn{\geq 1}. Number of bootstrap resamples used when
+\code{ci = TRUE}. Default \code{500}.}
 
-\item{n_threads}{Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
-\code{getOption("matrixCorr.threads", 1L)}.}
+\item{seed}{Optional positive integer used to seed the bootstrap resampling
+when \code{ci = TRUE}. If \code{NULL}, the current random-number stream is
+used.}
 
-\item{x}{An object of class \code{wincor}.}
+\item{output}{Output representation for the computed estimates.
+\itemize{
+\item \code{"matrix"} (default): full dense matrix; best when you need
+matrix algebra, dense heatmaps, or full compatibility with existing code.
+\item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+retained entries; best when many values are dropped by thresholding.
+\item \code{"edge_list"}: long-form data frame with columns
+\code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+and network-style workflows.
+}}
+
+\item{threshold}{Non-negative absolute-value filter for non-matrix outputs:
+keep entries with \code{abs(value) >= threshold}. Use
+\code{threshold > 0} when you want only stronger associations (typically
+with \code{output = "sparse"} or \code{"edge_list"}). Keep
+\code{threshold = 0} to retain all values. Must be \code{0} when
+\code{output = "matrix"}.}
+
+\item{diag}{Logical; whether to include diagonal entries in
+\code{"sparse"} and \code{"edge_list"} outputs.}
+
+\item{x}{An object of class \code{summary.wincor}.}
 
 \item{digits}{Integer; number of digits to print.}
 
@@ -88,11 +148,23 @@ from console width.}
 on the heatmap tiles.}
 
 \item{object}{An object of class \code{wincor}.}
+
+\item{ci_digits}{Integer; digits used for confidence limits in pairwise
+summaries.}
+
+\item{p_digits}{Integer; digits used for p-values in pairwise summaries.}
 }
 \value{
 A symmetric correlation matrix with class \code{wincor} and
 attributes \code{method = "winsorized_correlation"}, \code{description},
-and \code{package = "matrixCorr"}.
+and \code{package = "matrixCorr"}. When \code{ci = TRUE}, the returned
+object also carries a \code{ci} attribute with elements \code{est},
+\code{lwr.ci}, \code{upr.ci}, \code{conf.level}, and \code{ci.method},
+plus \code{attr(x, "conf.level")}. When \code{p_value = TRUE}, it also
+carries an \code{inference} attribute with elements \code{estimate},
+\code{statistic}, \code{parameter}, \code{p_value}, \code{n_obs}, and
+\code{alternative}. When either inferential option is requested, the
+object also carries \code{diagnostics$n_complete}.
 }
 \description{
 Computes all pairwise Winsorized correlation coefficients for the numeric
@@ -142,11 +214,38 @@ normalises it, and forms the complete-data matrix from cross-products. With
 \code{na_method = "pairwise"}, each pair is recomputed on its overlap of
 non-missing rows. As with Pearson correlation, the complete-data path yields
 a symmetric positive semidefinite matrix, whereas pairwise deletion can
-break positive semidefiniteness.
+break positive semidefiniteness. If the Winsorized variance of a column is
+zero, correlations involving that column are returned as \code{NA}.
+
+When \code{p_value = TRUE}, inference follows the method-specific test based
+on
+\deqn{
+T_{ij} = r_{w,ij}\sqrt{\frac{n_{ij} - 2}{1 - r_{w,ij}^2}},
+}
+evaluated against a \eqn{t}-distribution with
+\eqn{n_{ij} - 2g_{ij} - 2} degrees of freedom, where
+\eqn{g_{ij} = \lfloor tr \cdot n_{ij} \rfloor} and \eqn{n_{ij}} is the
+pairwise complete-case sample size for the corresponding column pair. The
+p-value is reported only when the pair is not identical and the resulting
+degrees of freedom are positive. When \code{ci = TRUE}, the interval is a
+percentile bootstrap interval based on \eqn{n_{\mathrm{boot}}} resamples
+drawn from the pairwise complete cases. If
+\eqn{\tilde r_{w,(1)} \le \cdots \le \tilde r_{w,(B)}} denotes the sorted
+bootstrap sample of finite estimates with \eqn{B} retained resamples, the
+reported limits are
+\deqn{
+\tilde r_{w,(\ell)} \quad \text{and} \quad \tilde r_{w,(u)},
+}
+where \eqn{\ell = \lfloor (\alpha/2) B + 0.5 \rfloor} and
+\eqn{u = \lfloor (1-\alpha/2) B + 0.5 \rfloor} for
+\eqn{\alpha = 1 - \mathrm{conf\_level}}. Resamples that yield undefined
+estimates are discarded before the percentile limits are formed.
 
 \strong{Computational complexity.} In the complete-data path, Winsorizing the
 columns requires sorting within each column, and forming the cross-product
-matrix costs \eqn{O(n p^2)} with \eqn{O(p^2)} output storage.
+matrix costs \eqn{O(n p^2)} with \eqn{O(p^2)} output storage. When
+\code{ci = TRUE}, the bootstrap cost is incurred separately for each column
+pair.
 }
 \examples{
 set.seed(11)

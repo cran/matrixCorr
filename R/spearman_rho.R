@@ -9,14 +9,35 @@
 #' @param data A numeric matrix or a data frame with at least two numeric
 #' columns. All non-numeric columns will be excluded. Each column must have
 #' at least two non-missing values.
-#' @param check_na Logical (default \code{TRUE}). If \code{TRUE}, the input is
-#' required to be free of \code{NA}/\code{NaN}/\code{Inf}. Set to
-#' \code{FALSE} only when the caller already handled missingness.
+#' @param na_method Character scalar controlling missing-data handling.
+#'   \code{"error"} rejects missing, \code{NaN}, and infinite values.
+#'   \code{"pairwise"} recomputes each correlation on its own pairwise
+#'   complete-case overlap.
 #' @param ci Logical (default \code{FALSE}). If \code{TRUE}, attach
 #' jackknife Euclidean-likelihood confidence intervals for the off-diagonal
 #' Spearman correlations.
 #' @param conf_level Confidence level used when \code{ci = TRUE}. Default is
 #' \code{0.95}.
+#' @param n_threads Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
+#'   \code{getOption("matrixCorr.threads", 1L)}.
+#' @param output Output representation for the computed estimates.
+#'   \itemize{
+#'   \item \code{"matrix"} (default): full dense matrix; best when you need
+#'   matrix algebra, dense heatmaps, or full compatibility with existing code.
+#'   \item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+#'   retained entries; best when many values are dropped by thresholding.
+#'   \item \code{"edge_list"}: long-form data frame with columns
+#'   \code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+#'   and network-style workflows.
+#'   }
+#' @param threshold Non-negative absolute-value filter for non-matrix outputs:
+#'   keep entries with \code{abs(value) >= threshold}. Use
+#'   \code{threshold > 0} when you want only stronger associations (typically
+#'   with \code{output = "sparse"} or \code{"edge_list"}). Keep
+#'   \code{threshold = 0} to retain all values. Must be \code{0} when
+#'   \code{output = "matrix"}.
+#' @param diag Logical; whether to include diagonal entries in
+#'   \code{"sparse"} and \code{"edge_list"} outputs.
 #'
 #' @return A symmetric numeric matrix where the \code{(i, j)}-th element is
 #' the Spearman correlation between the \code{i}-th and \code{j}-th
@@ -77,8 +98,8 @@
 #' Columns with zero rank variance (all values equal) are returned as \code{NA}
 #' along their row/column; the corresponding diagonal entry is also \code{NA}.
 #'
-#' When \code{check_na = FALSE}, each \eqn{(i,j)} estimate is recomputed on the
-#' pairwise complete-case overlap of columns \eqn{i} and \eqn{j}. When
+#' When \code{na_method = "pairwise"}, each \eqn{(i,j)} estimate is recomputed
+#' on the pairwise complete-case overlap of columns \eqn{i} and \eqn{j}. When
 #' \code{ci = TRUE}, confidence intervals are computed in 'C++' using the
 #' jackknife Euclidean-likelihood method of de Carvalho and Marques (2012).
 #' For a pairwise estimate \eqn{U = \hat\rho_S}, delete-one jackknife
@@ -100,8 +121,8 @@
 #' per-pair delete-one recomputation work and are intended for inference rather
 #' than raw-matrix throughput.
 #'
-#' @note Missing values are not allowed when \code{check_na = TRUE}. Columns
-#' with fewer than two observations are excluded.
+#' @note Missing values are rejected when \code{na_method = "error"}. Columns
+#' with fewer than two usable observations are excluded.
 #'
 #' @references
 #' Spearman, C. (1904). The proof and measurement of association between
@@ -154,18 +175,132 @@
 #' @seealso \code{\link{print.spearman_rho}}, \code{\link{plot.spearman_rho}}
 #' @author Thiago de Paula Oliveira
 #' @export
-spearman_rho <- function(data, check_na = TRUE, ci = FALSE, conf_level = 0.95) {
-  check_bool(ci, arg = "ci")
-  if (isTRUE(ci)) {
-    check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
+spearman_rho <- function(data,
+                         na_method = c("error", "pairwise"),
+                         ci = FALSE,
+                         conf_level = 0.95,
+                         n_threads = getOption("matrixCorr.threads", 1L),
+                         output = c("matrix", "sparse", "edge_list"),
+                         threshold = 0,
+                         diag = TRUE,
+                         ...) {
+  output_cfg <- .mc_validate_thresholded_output_request(
+    output = output,
+    threshold = threshold,
+    diag = diag
+  )
+  if (...length() == 0L && missing(na_method) && isFALSE(ci)) {
+    numeric_data <- validate_corr_input(data, check_na = TRUE)
+    colnames_data <- colnames(numeric_data)
+    prev_threads <- .mc_prepare_omp_threads(
+      n_threads,
+      n_threads_missing = missing(n_threads)
+    )
+    if (!is.null(prev_threads)) {
+      on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+    }
+    if (.mc_supports_direct_threshold_path(
+      method = "spearman",
+      na_method = "error",
+      ci = FALSE,
+      output = output_cfg$output,
+      threshold = output_cfg$threshold,
+      pairwise = FALSE,
+      has_ci = FALSE
+    )) {
+      trip <- spearman_threshold_triplets_cpp(
+        numeric_data,
+        threshold = output_cfg$threshold,
+        diag = output_cfg$diag
+      )
+      return(.mc_finalize_triplets_output(
+        triplets = trip,
+        output = output_cfg$output,
+        estimator_class = "spearman_rho",
+        method = "spearman",
+        description = "Pairwise Spearman's rank correlation matrix",
+        threshold = output_cfg$threshold,
+        diag = output_cfg$diag,
+        source_dim = as.integer(c(ncol(numeric_data), ncol(numeric_data))),
+        source_dimnames = if (!is.null(colnames_data)) .mc_square_dimnames(colnames_data),
+        symmetric = TRUE
+      ))
+    }
+    out <- .mc_structure_corr_matrix(
+      spearman_matrix_cpp(numeric_data),
+      class_name = "spearman_rho",
+      method = "spearman",
+      description = "Pairwise Spearman's rank correlation matrix",
+      dimnames = if (!is.null(colnames_data)) .mc_square_dimnames(colnames_data)
+    )
+    return(.mc_finalize_corr_output(
+      out,
+      output = output_cfg$output,
+      threshold = output_cfg$threshold,
+      diag = output_cfg$diag
+    ))
   }
 
-  numeric_data <- validate_corr_input(data, check_na = check_na)
+  if (...length() == 0L && missing(na_method)) {
+    na_cfg <- list(na_method = "error", check_na = TRUE)
+  } else {
+    legacy_args <- .mc_extract_legacy_aliases(list(...), allowed = "check_na")
+    na_cfg <- resolve_na_args(
+      na_method = na_method,
+      check_na = legacy_args$check_na %||% NULL,
+      na_method_missing = missing(na_method)
+    )
+  }
+  if (!isFALSE(ci)) {
+    check_bool(ci, arg = "ci")
+    check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
+  } else if (!is.logical(ci) || length(ci) != 1L || is.na(ci)) {
+    check_bool(ci, arg = "ci")
+  }
+
+  numeric_data <- validate_corr_input(data, check_na = na_cfg$check_na)
   colnames_data <- colnames(numeric_data)
+  dn <- .mc_square_dimnames(colnames_data)
   diagnostics <- NULL
   ci_attr <- NULL
 
-  if (isTRUE(check_na) && !isTRUE(ci)) {
+  prev_threads <- .mc_prepare_omp_threads(
+    n_threads,
+    n_threads_missing = missing(n_threads)
+  )
+  if (!is.null(prev_threads)) {
+    on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+  }
+
+  if (.mc_supports_direct_threshold_path(
+    method = "spearman",
+    na_method = na_cfg$na_method,
+    ci = ci,
+    output = output_cfg$output,
+    threshold = output_cfg$threshold,
+    pairwise = !isTRUE(na_cfg$check_na),
+    has_ci = ci
+  )) {
+    trip <- spearman_threshold_triplets_cpp(
+      numeric_data,
+      threshold = output_cfg$threshold,
+      diag = output_cfg$diag
+    )
+    return(.mc_finalize_triplets_output(
+      triplets = trip,
+      output = output_cfg$output,
+      estimator_class = "spearman_rho",
+      method = "spearman",
+      description = "Pairwise Spearman's rank correlation matrix",
+      threshold = output_cfg$threshold,
+      diag = output_cfg$diag,
+      source_dim = as.integer(c(ncol(numeric_data), ncol(numeric_data))),
+      source_dimnames = dn,
+      symmetric = TRUE
+    ))
+  }
+
+  if (isTRUE(na_cfg$check_na) && !isTRUE(ci)) {
     result <- spearman_matrix_cpp(numeric_data)
   } else {
     pairwise <- spearman_matrix_pairwise_cpp(
@@ -174,34 +309,39 @@ spearman_rho <- function(data, check_na = TRUE, ci = FALSE, conf_level = 0.95) {
       conf_level = conf_level
     )
     result <- pairwise$est
-    diagnostics <- list(n_complete = pairwise$n_complete)
-    dimnames(diagnostics$n_complete) <- list(colnames_data, colnames_data)
+    diagnostics <- list(
+      n_complete = .mc_set_matrix_dimnames(pairwise$n_complete, colnames_data)
+    )
     if (isTRUE(ci)) {
       ci_attr <- list(
-        est = unclass(result),
-        lwr.ci = unclass(pairwise$lwr),
-        upr.ci = unclass(pairwise$upr),
+        est = .mc_set_matrix_dimnames(unclass(result), colnames_data),
+        lwr.ci = .mc_set_matrix_dimnames(unclass(pairwise$lwr), colnames_data),
+        upr.ci = .mc_set_matrix_dimnames(unclass(pairwise$upr), colnames_data),
         conf.level = pairwise$conf_level
       )
-      dimnames(ci_attr$est) <- list(colnames_data, colnames_data)
-      dimnames(ci_attr$lwr.ci) <- list(colnames_data, colnames_data)
-      dimnames(ci_attr$upr.ci) <- list(colnames_data, colnames_data)
     }
   }
 
-  colnames(result) <- rownames(result) <- colnames_data
   out <- .mc_structure_corr_matrix(
     result,
     class_name = "spearman_rho",
     method = "spearman",
     description = "Pairwise Spearman's rank correlation matrix",
-    diagnostics = diagnostics
+    diagnostics = diagnostics,
+    dimnames = dn,
+    extra_attrs = if (!is.null(ci_attr)) {
+      list(
+        ci = ci_attr,
+        conf.level = conf_level
+      )
+    }
   )
-  if (!is.null(ci_attr)) {
-    attr(out, "ci") <- ci_attr
-    attr(out, "conf.level") <- conf_level
-  }
-  out
+  .mc_finalize_corr_output(
+    out,
+    output = output_cfg$output,
+    threshold = output_cfg$threshold,
+    diag = output_cfg$diag
+  )
 }
 
 .mc_spearman_ci_attr <- function(x) {
@@ -228,35 +368,41 @@ spearman_rho <- function(data, check_na = TRUE, ci = FALSE, conf_level = 0.95) {
   diag_attr <- attr(object, "diagnostics", exact = TRUE)
   include_ci <- identical(show_ci, "yes") && !is.null(ci)
 
-  rows <- vector("list", nrow(est) * (ncol(est) - 1L) / 2L)
+  n_pairs <- nrow(est) * (ncol(est) - 1L) / 2L
+  var1 <- character(n_pairs)
+  var2 <- character(n_pairs)
+  estimate <- numeric(n_pairs)
+  n_complete <- if (is.list(diag_attr) && is.matrix(diag_attr$n_complete)) integer(n_pairs) else NULL
+  lwr <- if (include_ci) numeric(n_pairs) else NULL
+  upr <- if (include_ci) numeric(n_pairs) else NULL
   k <- 0L
   for (i in seq_len(nrow(est) - 1L)) {
     for (j in (i + 1L):ncol(est)) {
       k <- k + 1L
-      rec <- list(
-        var1 = rn[i],
-        var2 = cn[j],
-        estimate = round(est[i, j], digits)
-      )
-      if (is.list(diag_attr) && is.matrix(diag_attr$n_complete)) {
-        rec$n_complete <- as.integer(diag_attr$n_complete[i, j])
-      }
+      var1[k] <- rn[i]
+      var2[k] <- cn[j]
+      estimate[k] <- round(est[i, j], digits)
+      if (!is.null(n_complete)) n_complete[k] <- as.integer(diag_attr$n_complete[i, j])
       if (include_ci) {
-        rec$lwr <- if (!is.null(ci$lwr.ci) && is.finite(ci$lwr.ci[i, j])) round(ci$lwr.ci[i, j], ci_digits) else NA_real_
-        rec$upr <- if (!is.null(ci$upr.ci) && is.finite(ci$upr.ci[i, j])) round(ci$upr.ci[i, j], ci_digits) else NA_real_
+        lwr[k] <- if (!is.null(ci$lwr.ci) && is.finite(ci$lwr.ci[i, j])) round(ci$lwr.ci[i, j], ci_digits) else NA_real_
+        upr[k] <- if (!is.null(ci$upr.ci) && is.finite(ci$upr.ci[i, j])) round(ci$upr.ci[i, j], ci_digits) else NA_real_
       }
-      rows[[k]] <- rec
     }
   }
 
-  df <- do.call(rbind.data.frame, rows)
+  df <- data.frame(
+    var1 = var1,
+    var2 = var2,
+    estimate = as.numeric(estimate),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  if (!is.null(n_complete)) df$n_complete <- as.integer(n_complete)
+  if (!is.null(lwr)) df$lwr <- as.numeric(lwr)
+  if (!is.null(upr)) df$upr <- as.numeric(upr)
   rownames(df) <- NULL
-  if ("estimate" %in% names(df)) df$estimate <- as.numeric(df$estimate)
-  if ("lwr" %in% names(df)) df$lwr <- as.numeric(df$lwr)
-  if ("upr" %in% names(df)) df$upr <- as.numeric(df$upr)
-  if ("n_complete" %in% names(df)) df$n_complete <- as.integer(df$n_complete)
 
-  out <- structure(df, class = c("summary.spearman_rho", "data.frame"))
+  out <- .mc_finalize_summary_df(df, class_name = "summary.spearman_rho")
   attr(out, "overview") <- .mc_summary_corr_matrix(object)
   attr(out, "has_ci") <- include_ci
   attr(out, "conf.level") <- if (is.null(ci)) NA_real_ else ci$conf.level
@@ -459,3 +605,4 @@ print.summary.spearman_rho <- function(x, digits = NULL, n = NULL,
   )
   invisible(x)
 }
+

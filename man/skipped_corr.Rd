@@ -13,19 +13,22 @@ skipped_corr(
   data,
   method = c("pearson", "spearman"),
   na_method = c("error", "pairwise"),
-  stand = TRUE,
-  outlier_rule = c("idealf", "mad"),
-  cutoff = sqrt(stats::qchisq(0.975, df = 2)),
-  n_threads = getOption("matrixCorr.threads", 1L),
-  return_masks = FALSE,
   ci = FALSE,
   p_value = FALSE,
   conf_level = 0.95,
+  n_threads = getOption("matrixCorr.threads", 1L),
+  return_masks = FALSE,
+  stand = TRUE,
+  outlier_rule = c("idealf", "mad"),
+  cutoff = sqrt(stats::qchisq(0.975, df = 2)),
   n_boot = 2000L,
   p_adjust = c("none", "hochberg", "ecp"),
   fwe_level = 0.05,
   n_mc = 1000L,
-  seed = NULL
+  seed = NULL,
+  output = c("matrix", "sparse", "edge_list"),
+  threshold = 0,
+  diag = TRUE
 )
 
 skipped_corr_masks(x, var1 = NULL, var2 = NULL)
@@ -94,6 +97,22 @@ finite rows. This is more permissive for incomplete data, but different
 pairs can be based on different effective samples and different skipped-row
 sets, so the resulting matrix is less directly comparable across entries.}
 
+\item{ci}{Logical; if \code{TRUE}, attach percentile-bootstrap confidence
+intervals for each skipped correlation using the Wilcox (2015) B2
+resampling scheme. Default \code{FALSE}.}
+
+\item{p_value}{Logical; if \code{TRUE}, attach bootstrap p-values for testing
+whether each skipped correlation is zero. Default \code{FALSE}.}
+
+\item{conf_level}{Confidence level used when \code{ci = TRUE}. Default
+\code{0.95}.}
+
+\item{n_threads}{Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
+\code{getOption("matrixCorr.threads", 1L)}.}
+
+\item{return_masks}{Logical; if \code{TRUE}, attach compact pairwise skipped-row
+indices as an attribute. Default \code{FALSE}.}
+
 \item{stand}{Logical; if \code{TRUE} (default), each variable in the pair is
 centred by its median and divided by a robust scale estimate before the
 projection outlier search. The scale estimate is the MAD when positive,
@@ -112,22 +131,6 @@ the outlier rule
 \eqn{\mathrm{med}(d_{i\cdot}) + cutoff \times s(d_{i\cdot})}. Larger
 values flag fewer observations as outliers; smaller values flag more.
 Default \code{sqrt(qchisq(0.975, df = 2))}.}
-
-\item{n_threads}{Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
-\code{getOption("matrixCorr.threads", 1L)}.}
-
-\item{return_masks}{Logical; if \code{TRUE}, attach compact pairwise skipped-row
-indices as an attribute. Default \code{FALSE}.}
-
-\item{ci}{Logical; if \code{TRUE}, attach percentile-bootstrap confidence
-intervals for each skipped correlation using the Wilcox (2015) B2
-resampling scheme. Default \code{FALSE}.}
-
-\item{p_value}{Logical; if \code{TRUE}, attach bootstrap p-values for testing
-whether each skipped correlation is zero. Default \code{FALSE}.}
-
-\item{conf_level}{Confidence level used when \code{ci = TRUE}. Default
-\code{0.95}.}
 
 \item{n_boot}{Integer \eqn{\geq 2}. Number of bootstrap resamples used when
 \code{ci = TRUE} or \code{p_value = TRUE}. Default \code{2000}.}
@@ -148,6 +151,27 @@ when \code{p_adjust = "ecp"} to estimate the critical p-value. Default
 \item{seed}{Optional positive integer used to seed the bootstrap resampling
 when \code{ci = TRUE} or \code{p_value = TRUE}. If \code{NULL}, a fresh
 internal seed is generated.}
+
+\item{output}{Output representation for the computed estimates.
+\itemize{
+\item \code{"matrix"} (default): full dense matrix; best when you need
+matrix algebra, dense heatmaps, or full compatibility with existing code.
+\item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+retained entries; best when many values are dropped by thresholding.
+\item \code{"edge_list"}: long-form data frame with columns
+\code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+and network-style workflows.
+}}
+
+\item{threshold}{Non-negative absolute-value filter for non-matrix outputs:
+keep entries with \code{abs(value) >= threshold}. Use
+\code{threshold > 0} when you want only stronger associations (typically
+with \code{output = "sparse"} or \code{"edge_list"}). Keep
+\code{threshold = 0} to retain all values. Must be \code{0} when
+\code{output = "matrix"}.}
+
+\item{diag}{Logical; whether to include diagonal entries in
+\code{"sparse"} and \code{"edge_list"} outputs.}
 
 \item{x}{An object of class \code{summary.skipped_corr}.}
 

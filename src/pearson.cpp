@@ -4,6 +4,7 @@
 #include <limits>
 #include <cmath>
 #include <vector>
+#include "threshold_triplets.h"
 // [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::plugins(openmp)]]
 
@@ -33,6 +34,51 @@ inline double fisher_z_inv(double z) {
 
 } // namespace
 
+struct PearsonScaleInfo {
+  arma::rowvec mu;
+  arma::vec inv_s;
+  std::vector<unsigned char> valid;
+};
+
+inline PearsonScaleInfo compute_pearson_scale_info(const arma::mat& X) {
+  const arma::uword n = X.n_rows;
+  const arma::uword p = X.n_cols;
+  const double n_d = static_cast<double>(n);
+
+  PearsonScaleInfo out{
+    arma::rowvec(p, arma::fill::zeros),
+    arma::vec(p, arma::fill::zeros),
+    std::vector<unsigned char>(static_cast<std::size_t>(p), 0u)
+  };
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+  for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
+    const arma::uword uj = static_cast<arma::uword>(j);
+    const double* xj = X.colptr(uj);
+
+    double sum = 0.0;
+    double sumsq = 0.0;
+    for (arma::uword i = 0; i < n; ++i) {
+      const double v = xj[i];
+      sum += v;
+      sumsq += v * v;
+    }
+
+    const double mu = sum / n_d;
+    const double d = sumsq - n_d * mu * mu;
+
+    out.mu[uj] = mu;
+    if (d > 0.0 && std::isfinite(d)) {
+      out.inv_s[uj] = 1.0 / std::sqrt(d);
+      out.valid[static_cast<std::size_t>(uj)] = 1u;
+    }
+  }
+
+  return out;
+}
+
 // X is n x p (double, no NA). Returns p x p Pearson correlation matrix.
 // [[Rcpp::export]]
 arma::mat pearson_matrix_cpp(SEXP X_) {
@@ -43,83 +89,181 @@ arma::mat pearson_matrix_cpp(SEXP X_) {
   const arma::uword p = Rf_ncols(X_);
   if (n < 2 || p < 2) Rcpp::stop("Need >= 2 rows and >= 2 columns.");
 
-  // No-copy view over the input matrix.
   arma::mat X(REAL(X_), n, p, /*copy_aux_mem*/ false, /*strict*/ true);
+  const double n_d = static_cast<double>(n);
 
-  // Column means (1 x p).
-  arma::rowvec mu = arma::sum(X, 0) / static_cast<double>(n);
+  const PearsonScaleInfo scale = compute_pearson_scale_info(X);
+  const double* mu_ptr = scale.mu.memptr();
+  const double* inv_ptr = scale.inv_s.memptr();
+  const std::vector<unsigned char>& valid = scale.valid;
 
-  // XtX := X'X via SYRK (upper triangle); fallback to GEMM.
-  arma::mat XtX(p, p, arma::fill::zeros);
+  arma::mat R(p, p, arma::fill::zeros);
+
 #if defined(ARMA_USE_BLAS)
-  {
-    const arma::blas_int N = static_cast<arma::blas_int>(p);
-    const arma::blas_int K = static_cast<arma::blas_int>(n);
-    const double alpha = 1.0;
-    const double beta = 0.0;
-    const char uplo = 'U';
-    const char trans = 'T';
-    arma::blas::syrk<double>(&uplo, &trans, &N, &K,
-                             &alpha, X.memptr(), &K,
-                             &beta, XtX.memptr(), &N);
-  }
+{
+  const arma::blas_int N = static_cast<arma::blas_int>(p);
+  const arma::blas_int K = static_cast<arma::blas_int>(n);
+  const double alpha = 1.0;
+  const double beta = 0.0;
+  const char uplo = 'U';
+  const char trans = 'T';
+  arma::blas::syrk<double>(
+    &uplo, &trans, &N, &K,
+    &alpha, X.memptr(), &K,
+    &beta, R.memptr(), &N
+  );
+}
 #else
-  XtX = X.t() * X;
+R = X.t() * X;
 #endif
 
-  // XtX := XtX - n * mu * mu' on the stored upper triangle only.
-  const double neg_n = -static_cast<double>(n);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static)
 #endif
-  for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
-    const arma::uword uj = static_cast<arma::uword>(j);
-    const double fj = neg_n * mu[uj];
-    for (arma::uword i = 0; i <= uj; ++i) {
-      XtX(i, uj) += fj * mu[i];
+for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
+  const arma::uword uj = static_cast<arma::uword>(j);
+  const bool valid_j = valid[static_cast<std::size_t>(uj)] != 0u;
+  const double mu_j = mu_ptr[uj];
+  const double inv_j = inv_ptr[uj];
+
+  for (arma::uword i = 0; i < uj; ++i) {
+    double val = NA_REAL;
+
+    if (valid_j && valid[static_cast<std::size_t>(i)] != 0u) {
+      const double num = R(i, uj) - n_d * mu_ptr[i] * mu_j;
+      val = clamp_corr(num * inv_ptr[i] * inv_j);
+    }
+
+    R(i, uj) = val;
+    R(uj, i) = val;
+  }
+
+  R(uj, uj) = valid_j ? 1.0 : NA_REAL;
+}
+
+return R;
+}
+
+// Complete-data Pearson upper-triplet kernel for thresholded outputs.
+// [[Rcpp::export]]
+Rcpp::List pearson_threshold_triplets_cpp(SEXP X_,
+                                          const double threshold = 0.0,
+                                          const bool diag = true,
+                                          const int block_size = 256) {
+  if (!Rf_isReal(X_) || !Rf_isMatrix(X_))
+    Rcpp::stop("Numeric double matrix required.");
+  if (!(threshold >= 0.0) || !std::isfinite(threshold))
+    Rcpp::stop("threshold must be finite and >= 0.");
+  if (block_size < 1)
+    Rcpp::stop("block_size must be >= 1.");
+
+  const arma::uword n = Rf_nrows(X_);
+  const arma::uword p = Rf_ncols(X_);
+  if (n < 2 || p < 2) Rcpp::stop("Need >= 2 rows and >= 2 columns.");
+
+  arma::mat X(REAL(X_), n, p, /*copy_aux_mem*/ false, /*strict*/ true);
+  const double n_d = static_cast<double>(n);
+
+  const PearsonScaleInfo scale = compute_pearson_scale_info(X);
+  const double* mu_ptr = scale.mu.memptr();
+  const double* inv_ptr = scale.inv_s.memptr();
+  const std::vector<unsigned char>& valid = scale.valid;
+
+  matrixCorr_detail::threshold_triplets::TripletBuffer out;
+
+  const std::size_t pz = static_cast<std::size_t>(p);
+  const std::size_t total_upper = diag
+  ? (pz * (pz + 1u)) / 2u
+  : (pz * (pz - 1u)) / 2u;
+
+  if (threshold <= 0.0) {
+    out.i.reserve(total_upper);
+    out.j.reserve(total_upper);
+    out.x.reserve(total_upper);
+  } else {
+    const std::size_t initial =
+      std::min<std::size_t>(total_upper, std::max<std::size_t>(1024u, 8u * pz));
+    out.i.reserve(initial);
+    out.j.reserve(initial);
+    out.x.reserve(initial);
+  }
+
+  const std::size_t bs = std::max<std::size_t>(
+    1u, static_cast<std::size_t>(block_size)
+  );
+
+  for (std::size_t j0 = 0u; j0 < pz; j0 += bs) {
+    const std::size_t j1 = std::min<std::size_t>(pz, j0 + bs);
+    const std::size_t bj = j1 - j0;
+
+    for (std::size_t k0 = j0; k0 < pz; k0 += bs) {
+      const std::size_t k1 = std::min<std::size_t>(pz, k0 + bs);
+      const std::size_t bk = k1 - k0;
+
+      arma::mat blk =
+        X.cols(static_cast<arma::uword>(j0), static_cast<arma::uword>(j1 - 1u)).t() *
+        X.cols(static_cast<arma::uword>(k0), static_cast<arma::uword>(k1 - 1u));
+
+      if (j0 == k0) {
+        for (std::size_t r = 0u; r < bj; ++r) {
+          const std::size_t gj = j0 + r;
+          if (valid[gj] == 0u) continue;
+
+          const double mu_j = mu_ptr[gj];
+          const double inv_j = inv_ptr[gj];
+          const std::size_t c_start = diag ? r : (r + 1u);
+
+          for (std::size_t c = c_start; c < bk; ++c) {
+            const std::size_t gk = k0 + c;
+            if (valid[gk] == 0u) continue;
+
+            const double val = (gj == gk)
+              ? 1.0
+            : clamp_corr(
+                (blk(static_cast<arma::uword>(r), static_cast<arma::uword>(c)) -
+                  n_d * mu_j * mu_ptr[gk]) *
+                  inv_j * inv_ptr[gk]
+            );
+
+            if (!matrixCorr_detail::threshold_triplets::retain_value(val, threshold))
+              continue;
+
+            out.i.push_back(static_cast<int>(gj + 1u));
+            out.j.push_back(static_cast<int>(gk + 1u));
+            out.x.push_back(val);
+          }
+        }
+      } else {
+        for (std::size_t r = 0u; r < bj; ++r) {
+          const std::size_t gj = j0 + r;
+          if (valid[gj] == 0u) continue;
+
+          const double mu_j = mu_ptr[gj];
+          const double inv_j = inv_ptr[gj];
+
+          for (std::size_t c = 0u; c < bk; ++c) {
+            const std::size_t gk = k0 + c;
+            if (valid[gk] == 0u) continue;
+
+            const double val = clamp_corr(
+              (blk(static_cast<arma::uword>(r), static_cast<arma::uword>(c)) -
+                n_d * mu_j * mu_ptr[gk]) *
+                inv_j * inv_ptr[gk]
+            );
+
+            if (!matrixCorr_detail::threshold_triplets::retain_value(val, threshold))
+              continue;
+
+            out.i.push_back(static_cast<int>(gj + 1u));
+            out.j.push_back(static_cast<int>(gk + 1u));
+            out.x.push_back(val);
+          }
+        }
+      }
     }
   }
 
-  // For correlation, the global covariance factor 1 / (n - 1) cancels.
-  // Read the centred cross-product diagonal directly and normalise once.
-  arma::vec centered_diag(p);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-  for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
-    const arma::uword uj = static_cast<arma::uword>(j);
-    const double d = XtX(uj, uj);
-    centered_diag[uj] = d > 0.0 ? d : 0.0;
-  }
-
-  arma::vec inv_s = 1.0 / arma::sqrt(centered_diag);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-  for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
-    const arma::uword uj = static_cast<arma::uword>(j);
-    const double sj = inv_s[uj];
-    if (!std::isfinite(sj) || sj == 0.0) continue;
-    for (arma::uword i = 0; i < uj; ++i) {
-      const double si = inv_s[i];
-      if (!std::isfinite(si) || si == 0.0) continue;
-      XtX(i, uj) *= (si * sj);
-    }
-    XtX(uj, uj) = 1.0;
-  }
-
-  XtX = arma::symmatu(XtX);
-
-  // Zero-variance rows/cols are undefined.
-  arma::uvec zero = arma::find(centered_diag == 0.0);
-  for (arma::uword k = 0; k < zero.n_elem; ++k) {
-    const arma::uword j = zero[k];
-    XtX.row(j).fill(arma::datum::nan);
-    XtX.col(j).fill(arma::datum::nan);
-    XtX(j, j) = arma::datum::nan;
-  }
-
-  return XtX;
+  return matrixCorr_detail::threshold_triplets::as_list(out);
 }
 
 // Pairwise-complete Pearson matrix with optional Fisher-z confidence intervals.
@@ -167,24 +311,40 @@ Rcpp::List pearson_matrix_pairwise_cpp(SEXP X_,
   for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
     const arma::uword uj = static_cast<arma::uword>(j);
     const arma::uvec& idx_j = finite_idx[uj];
+    const arma::uword n_idx_j = idx_j.n_elem;
+    const arma::uword* idx_j_ptr = idx_j.memptr();
     const double* colj_ptr = X.colptr(uj);
-
-    static thread_local std::vector<arma::uword> overlap_idx;
 
     for (arma::uword k = uj + 1u; k < p; ++k) {
       const arma::uvec& idx_k = finite_idx[k];
-      const std::size_t possible = std::min(idx_j.n_elem, idx_k.n_elem);
+      const arma::uword n_idx_k = idx_k.n_elem;
+      const std::size_t possible = std::min(n_idx_j, n_idx_k);
       if (possible < 2u) continue;
 
-      overlap_idx.clear();
-      overlap_idx.reserve(possible);
-
+      const arma::uword* idx_k_ptr = idx_k.memptr();
+      const double* colk_ptr = X.colptr(k);
       arma::uword ia = 0u, ib = 0u;
-      while (ia < idx_j.n_elem && ib < idx_k.n_elem) {
-        const arma::uword a = idx_j[ia];
-        const arma::uword b = idx_k[ib];
+      int overlap_n = 0;
+      double mean_x = 0.0;
+      double mean_y = 0.0;
+      double sxx = 0.0;
+      double syy = 0.0;
+      double sxy = 0.0;
+      while (ia < n_idx_j && ib < n_idx_k) {
+        const arma::uword a = idx_j_ptr[ia];
+        const arma::uword b = idx_k_ptr[ib];
         if (a == b) {
-          overlap_idx.push_back(a);
+          const double x = colj_ptr[a];
+          const double y = colk_ptr[b];
+          ++overlap_n;
+          const double inv_n = 1.0 / static_cast<double>(overlap_n);
+          const double dx = x - mean_x;
+          const double dy = y - mean_y;
+          mean_x += dx * inv_n;
+          mean_y += dy * inv_n;
+          sxx += dx * (x - mean_x);
+          syy += dy * (y - mean_y);
+          sxy += dx * (y - mean_y);
           ++ia;
           ++ib;
         } else if (a < b) {
@@ -194,34 +354,9 @@ Rcpp::List pearson_matrix_pairwise_cpp(SEXP X_,
         }
       }
 
-      const int overlap_n = static_cast<int>(overlap_idx.size());
       n_complete(uj, k) = overlap_n;
       n_complete(k, uj) = overlap_n;
       if (overlap_n < 2) continue;
-
-      const double* colk_ptr = X.colptr(k);
-      double sum_x = 0.0;
-      double sum_y = 0.0;
-      for (std::size_t t = 0; t < overlap_idx.size(); ++t) {
-        const arma::uword row = overlap_idx[t];
-        sum_x += colj_ptr[row];
-        sum_y += colk_ptr[row];
-      }
-
-      const double mean_x = sum_x / static_cast<double>(overlap_n);
-      const double mean_y = sum_y / static_cast<double>(overlap_n);
-
-      double sxx = 0.0;
-      double syy = 0.0;
-      double sxy = 0.0;
-      for (std::size_t t = 0; t < overlap_idx.size(); ++t) {
-        const arma::uword row = overlap_idx[t];
-        const double dx = colj_ptr[row] - mean_x;
-        const double dy = colk_ptr[row] - mean_y;
-        sxx += dx * dx;
-        syy += dy * dy;
-        sxy += dx * dy;
-      }
 
       double r = arma::datum::nan;
       if (sxx > 0.0 && syy > 0.0) {

@@ -9,6 +9,7 @@ test_that("structure, classes and lengths are correct", {
   expect_true(all(c("means","diffs","groups","based.on",
                     "lower.limit","mean.diffs","upper.limit",
                     "lines","CI.lines","loa_multiplier","critical.diff") %in% names(ba)))
+  expect_false(any(c("groups", "based.on", "lines", "CI.lines") %in% names(unclass(ba))))
 
   # basic size checks
   expect_equal(length(ba$means), ba$based.on)
@@ -21,6 +22,23 @@ test_that("structure, classes and lengths are correct", {
                     "mean.diff.ci.lower","mean.diff.ci.upper",
                     "upper.limit.ci.lower","upper.limit.ci.upper")
                   %in% names(ba$CI.lines)))
+})
+
+test_that("ba stores a smaller canonical object than the legacy expanded layout", {
+  set.seed(31)
+  fit <- ba(rnorm(200), rnorm(200))
+
+  legacy_like <- c(
+    unclass(fit),
+    list(
+      groups = fit$groups,
+      based.on = fit$based.on,
+      lines = fit$lines,
+      CI.lines = fit$CI.lines
+    )
+  )
+
+  expect_lt(as.numeric(object.size(fit)), as.numeric(object.size(legacy_like)))
 })
 
 test_that("matches known output on the 12-row example (exact numbers)", {
@@ -62,7 +80,7 @@ test_that("summary.ba returns a compact summary object and prints grouped sectio
   sm <- summary(fit)
 
   expect_s3_class(sm, "summary.ba")
-  expect_true(all(c("n", "bias", "sd_loa", "loa_low", "loa_up", "width",
+  expect_true(all(c("n_obs", "bias", "sd_loa", "loa_low", "loa_up", "width",
                     "loa_multiplier", "bias_lwr", "bias_upr",
                     "lo_lwr", "lo_upr", "up_lwr", "up_upr") %in% names(sm)))
 
@@ -142,6 +160,20 @@ test_that("constant difference yields zero SD and zero-width LoA/CI", {
   expect_equal(as.numeric(ba$CI.lines["lower.limit.ci.upper"]), -2, tolerance = 1e-12)
   expect_equal(as.numeric(ba$CI.lines["upper.limit.ci.lower"]), -2, tolerance = 1e-12)
   expect_equal(as.numeric(ba$CI.lines["upper.limit.ci.upper"]), -2, tolerance = 1e-12)
+})
+
+test_that("ba honors n_threads without changing estimates", {
+  set.seed(44)
+  x <- rnorm(80, 100, 10)
+  y <- x + rnorm(80, 0, 8)
+
+  fit1 <- ba(x, y, n_threads = 1L)
+  fit2 <- ba(x, y, n_threads = 2L)
+
+  expect_equal(unclass(fit1), unclass(fit2), tolerance = 1e-12)
+  expect_equal(fit1$groups, fit2$groups, tolerance = 1e-12)
+  expect_equal(fit1$lines, fit2$lines, tolerance = 1e-12)
+  expect_equal(fit1$CI.lines, fit2$CI.lines, tolerance = 1e-12)
 })
 
 test_that("errors on invalid inputs", {

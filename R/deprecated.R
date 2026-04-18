@@ -29,8 +29,12 @@
 #' @param mad_consistent Logical; if `TRUE`, uses the consistency-corrected MAD.
 #' @param w Optional vector of case weights.
 #' @param sparse_threshold Optional threshold controlling sparse output.
+#' @param output Output representation for the computed estimates.
+#' @param threshold Non-negative absolute-value filter for non-matrix outputs.
+#' @param diag Logical; whether to include diagonal entries in non-matrix outputs.
 #' @param n_threads Integer number of OpenMP threads.
-#' @param rind Character; column identifying subjects for `ccc_rm_reml()`.
+#' @param rind Character; column identifying subjects, forwarded as `subject`
+#'   to `ccc_rm_reml()`.
 #' @param interaction Logical; forwarded to `ccc_rm_reml()`.
 #' @param Dmat Optional distance matrix forwarded to `ccc_rm_reml()`.
 #' @param Dmat_type Character selector controlling how `Dmat` is constructed.
@@ -66,7 +70,10 @@
 #'   precision matrices.
 #' @param ci Logical; if `TRUE`, request confidence intervals when supported by
 #'   the replacement function.
-#' @param check_na Logical validation flag used by `dcor()`.
+#' @param na_method Missing-data policy forwarded to the replacement function
+#'   when supported.
+#' @param ... Additional arguments forwarded to the replacement function when
+#'   supported.
 #'
 #' @details
 #' Renamed functions:
@@ -106,6 +113,7 @@ bland_altman <- function(group1,
                          two = 1.96,
                          mode = 1L,
                          conf_level = 0.95,
+                         n_threads = getOption("matrixCorr.threads", 1L),
                          verbose = FALSE) {
   .mc_deprecate(
     old = "bland_altman",
@@ -119,6 +127,7 @@ bland_altman <- function(group1,
     loa_multiplier = two,
     mode = mode,
     conf_level = conf_level,
+    n_threads = n_threads,
     verbose = verbose
   )
 }
@@ -127,6 +136,7 @@ bland_altman <- function(group1,
 #' @export
 bland_altman_repeated <- function(data = NULL, response, subject, method, time,
                                   two = 1.96, conf_level = 0.95,
+                                  n_threads = getOption("matrixCorr.threads", 1L),
                                   include_slope = FALSE,
                                   use_ar1 = FALSE, ar1_rho = NA_real_,
                                   max_iter = 200L, tol = 1e-6,
@@ -145,6 +155,7 @@ bland_altman_repeated <- function(data = NULL, response, subject, method, time,
     time = time,
     loa_multiplier = two,
     conf_level = conf_level,
+    n_threads = n_threads,
     include_slope = include_slope,
     use_ar1 = use_ar1,
     ar1_rho = ar1_rho,
@@ -165,7 +176,10 @@ biweight_mid_corr <- function(
     mad_consistent = FALSE,
     w = NULL,
     sparse_threshold = NULL,
-    n_threads = getOption("matrixCorr.threads", 1L)
+    n_threads = getOption("matrixCorr.threads", 1L),
+    output = c("matrix", "sparse", "edge_list"),
+    threshold = 0,
+    diag = TRUE
 ) {
   .mc_deprecate(old = "biweight_mid_corr", new = "bicor")
 
@@ -178,15 +192,21 @@ biweight_mid_corr <- function(
     mad_consistent = mad_consistent,
     w = w,
     sparse_threshold = sparse_threshold,
-    n_threads = n_threads
+    n_threads = n_threads,
+    output = output,
+    threshold = threshold,
+    diag = diag
   )
 }
 
 #' @rdname deprecated-matrixCorr
 #' @export
-distance_corr <- function(data, check_na = TRUE) {
+distance_corr <- function(data, na_method = c("error", "pairwise"), ...) {
   .mc_deprecate(old = "distance_corr", new = "dcor")
-  dcor(data = data, check_na = check_na)
+  if (missing(na_method)) {
+    return(dcor(data = data, ...))
+  }
+  dcor(data = data, na_method = na_method, ...)
 }
 
 #' @rdname deprecated-matrixCorr
@@ -196,7 +216,10 @@ partial_correlation <- function(data,
                                 lambda = 1e-3,
                                 return_cov_precision = FALSE,
                                 ci = FALSE,
-                                conf_level = 0.95) {
+                                conf_level = 0.95,
+                                output = c("matrix", "sparse", "edge_list"),
+                                threshold = 0,
+                                diag = TRUE) {
   .mc_deprecate(
     old = "partial_correlation",
     new = "pcorr",
@@ -209,7 +232,10 @@ partial_correlation <- function(data,
     lambda = lambda,
     return_cov_precision = return_cov_precision,
     ci = ci,
-    conf_level = conf_level
+    conf_level = conf_level,
+    output = output,
+    threshold = threshold,
+    diag = diag
   )
 }
 
@@ -242,7 +268,7 @@ ccc_lmm_reml <- function(data, response, rind,
   ccc_rm_reml(
     data = data,
     response = response,
-    rind = rind,
+    subject = rind,
     method = method,
     time = time,
     interaction = interaction,
@@ -302,3 +328,4 @@ ccc_pairwise_u_stat <- function(data,
     verbose = verbose
   )
 }
+

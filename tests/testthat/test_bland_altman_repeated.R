@@ -112,8 +112,38 @@ test_that("Two-method BA recovers bias and sd_loa under i.i.d. residuals", {
   # Summary object sanity
   sm <- summary(fit)
   expect_s3_class(sm, "summary.ba_repeated")
-  expect_true(all(c("bias","sd_loa","loa_low","loa_up","width","n") %in% names(sm)))
+  expect_true(all(c("bias","sd_loa","loa_low","loa_up","width","n_obs") %in% names(sm)))
   expect_false(any(c("ar1_rho", "ar1_estimated") %in% names(sm)))
+})
+
+test_that("ba_rm honors n_threads without changing estimates", {
+  dat2 <- sim_two_method_known(S = 20L, Tm = 8L, mu = 0.8, sig_s = 1.1, sig_e = 1.3, seed = 77L)
+  fit2_1 <- ba_rm(
+    data = dat2,
+    response = "y", subject = "subject", method = "method", time = "time",
+    include_slope = FALSE, use_ar1 = FALSE, n_threads = 1L
+  )
+  fit2_2 <- ba_rm(
+    data = dat2,
+    response = "y", subject = "subject", method = "method", time = "time",
+    include_slope = FALSE, use_ar1 = FALSE, n_threads = 2L
+  )
+
+  expect_equal(unclass(fit2_1), unclass(fit2_2), tolerance = 1e-12)
+
+  datm <- sim_multi_method(S = 12L, Tm = 6L, seed = 78L)
+  fitm_1 <- ba_rm(
+    data = datm,
+    response = "y", subject = "subject", method = "method", time = "time",
+    include_slope = FALSE, use_ar1 = FALSE, n_threads = 1L
+  )
+  fitm_2 <- ba_rm(
+    data = datm,
+    response = "y", subject = "subject", method = "method", time = "time",
+    include_slope = FALSE, use_ar1 = FALSE, n_threads = 2L
+  )
+
+  expect_equal(unclass(fitm_1), unclass(fitm_2), tolerance = 1e-12)
 })
 
 test_that("Two-method BA with AR(1) honours supplied rho and recovers truth", {
@@ -530,9 +560,22 @@ test_that("Column mapping works both with data= and with vectors", {
   )
   expect_true(inherits(fit2, "ba_repeated_matrix"))
 
-  # Stored data_long/mapping present for plotting
-  expect_true(!is.null(fit1$data_long) && !is.null(fit1$mapping))
-  expect_true(!is.null(fit2$data_long) && !is.null(fit2$mapping))
+  expect_true(all(c("data_long", "mapping") %in% names(fit1)))
+  expect_true(all(c("data_long", "mapping") %in% names(fit2)))
+  expect_equal(names(fit1$data_long), c(".response", ".subject", ".method", ".time"))
+  expect_equal(names(fit2$data_long), c(".response", ".subject", ".method", ".time"))
+  expect_identical(fit1$mapping, list(
+    response = ".response",
+    subject = ".subject",
+    method = ".method",
+    time = ".time"
+  ))
+  expect_identical(fit2$mapping, list(
+    response = ".response",
+    subject = ".subject",
+    method = ".method",
+    time = ".time"
+  ))
 })
 
 test_that("summary/print produce expected classes and do not error", {
@@ -547,7 +590,7 @@ test_that("summary/print produce expected classes and do not error", {
 
   sm_mat <- summary(fit_mat)
   expect_s3_class(sm_mat, "summary.ba_repeated_matrix")
-  expect_true(all(c("method1","method2","bias","sd_loa","loa_low","loa_up","width","n") %in% names(sm_mat)))
+  expect_true(all(c("item1","item2","bias","sd_loa","loa_low","loa_up","width","n_obs") %in% names(sm_mat)))
   expect_false(any(c("ar1_rho", "ar1_estimated") %in% names(sm_mat)))
   out_mat <- capture.output(print(sm_mat))
   expect_true(any(grepl("^Agreement estimates$", out_mat)))
@@ -562,7 +605,7 @@ test_that("summary/print produce expected classes and do not error", {
   )
   sm2 <- summary(fit2)
   expect_s3_class(sm2, "summary.ba_repeated")
-  expect_true(all(c("bias","sd_loa","loa_low","loa_up","width","n") %in% names(sm2)))
+  expect_true(all(c("bias","sd_loa","loa_low","loa_up","width","n_obs") %in% names(sm2)))
   expect_false(any(c("ar1_rho", "ar1_estimated") %in% names(sm2)))
   out2 <- capture.output(print(sm2))
   expect_true(any(grepl("^Agreement estimates$", out2)))
@@ -616,6 +659,11 @@ test_that("plot methods return a ggplot object and do not error", {
   )
   p_mat <- plot(fit_mat, smoother = "lm", facet_scales = "free_y")
   expect_s3_class(p_mat, "ggplot")
+  has_point_layer <- any(vapply(p_mat$layers, function(layer) {
+    inherits(layer$geom, "GeomPoint")
+  }, logical(1)))
+  expect_true(has_point_layer)
+  expect_identical(p_mat$labels$x, "Pair mean")
 
   # Two-method plot
   dat12 <- subset(dat, method %in% c("M1","M2"))

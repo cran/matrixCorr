@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>2. Wide Correlation Workflows</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">2. Wide Correlation Workflows</h1>
+
+
+
+<div id="scope" class="section level2">
+<h2>Scope</h2>
+<p>This vignette covers the basic wide-data correlation estimators.
+These methods start from one numeric matrix or data frame, treat columns
+as variables, and return a square matrix indexed by those columns.</p>
+<p>The main functions in this group are:</p>
+<ul>
+<li><code>pearson_corr()</code></li>
+<li><code>spearman_rho()</code></li>
+<li><code>kendall_tau()</code></li>
+<li><code>dcor()</code></li>
+</ul>
+<p>They answer related but not identical questions, so method choice
+should be driven by the structure of the data rather than by habit
+alone.</p>
+</div>
+<div id="a-common-input-pattern" class="section level2">
+<h2>A common input pattern</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(matrixCorr)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">10</span>)</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>z <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">80</span>)</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">80</span>)</span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>X <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>  <span class="at">x1 =</span> z <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">80</span>, <span class="at">sd =</span> <span class="fl">0.35</span>),</span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>  <span class="at">x2 =</span> <span class="fl">0.85</span> <span class="sc">*</span> z <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">80</span>, <span class="at">sd =</span> <span class="fl">0.45</span>),</span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>  <span class="at">x3 =</span> <span class="fl">0.25</span> <span class="sc">*</span> z <span class="sc">+</span> <span class="fl">0.70</span> <span class="sc">*</span> u <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">80</span>, <span class="at">sd =</span> <span class="fl">0.45</span>),</span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>  <span class="at">x4 =</span> <span class="fu">rnorm</span>(<span class="dv">80</span>)</span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>)</span></code></pre></div>
+<p>All four estimators accept this same wide input format.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>R_pear <span class="ot">&lt;-</span> <span class="fu">pearson_corr</span>(X)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>R_spr  <span class="ot">&lt;-</span> <span class="fu">spearman_rho</span>(X)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>R_ken  <span class="ot">&lt;-</span> <span class="fu">kendall_tau</span>(X)</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>R_dcor <span class="ot">&lt;-</span> <span class="fu">dcor</span>(X)</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="fu">print</span>(R_pear, <span class="at">digits =</span> <span class="dv">2</span>)</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; Pearson correlation matrix</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt;   method      : pearson</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt;      x1    x2   x3    x4</span></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co">#&gt; x1 1.00  0.78 0.13  0.08</span></span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a><span class="co">#&gt; x2 0.78  1.00 0.17 -0.02</span></span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a><span class="co">#&gt; x3 0.13  0.17 1.00  0.22</span></span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt; x4 0.08 -0.02 0.22  1.00</span></span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="fu">summary</span>(R_spr)</span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt; Correlation summary</span></span>
+<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
+<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
+<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 10</span></span>
+<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
+<span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
+<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0023 to 1.0000</span></span>
+<span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate fisher_z</span></span>
+<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7766   1.0368  </span></span>
+<span id="cb2-27"><a href="#cb2-27" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1866   0.1888  </span></span>
+<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.1750   0.1768  </span></span>
+<span id="cb2-29"><a href="#cb2-29" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1318   0.1326  </span></span>
+<span id="cb2-30"><a href="#cb2-30" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.1047   0.1051  </span></span>
+<span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0023  -0.0023 </span></span>
+<span id="cb2-32"><a href="#cb2-32" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-33"><a href="#cb2-33" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
+<span id="cb2-34"><a href="#cb2-34" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-35"><a href="#cb2-35" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate  fisher_z </span></span>
+<span id="cb2-36"><a href="#cb2-36" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7766292 1.0368199</span></span>
+<span id="cb2-37"><a href="#cb2-37" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1866151 0.1888278</span></span>
+<span id="cb2-38"><a href="#cb2-38" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.1750117 0.1768321</span></span>
+<span id="cb2-39"><a href="#cb2-39" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1318097 0.1325811</span></span>
+<span id="cb2-40"><a href="#cb2-40" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.1046882 0.1050732</span></span></code></pre></div>
+<p>This toy dataset is intentionally structured so that <code>x1</code>
+and <code>x2</code> form a clear linear pair, <code>x3</code> is only
+moderately related to that first block, and <code>x4</code> is close to
+null. That makes the shared output structure easier to interpret than a
+pure-noise example.</p>
+</div>
+<div id="pearson-correlation" class="section level2">
+<h2>Pearson correlation</h2>
+<p>Pearson correlation targets linear association on the original
+measurement scale. It is the natural first choice when variables are
+continuous, the relationship is approximately linear, and there is no
+strong concern about outlier sensitivity.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">plot</span>(R_pear)</span></code></pre></div>
+<p><img role="img" src="data:image/png;base64,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" /><!-- --></p>
+<p>If confidence intervals are required, they can be requested
+directly.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>R_pear_ci <span class="ot">&lt;-</span> <span class="fu">pearson_corr</span>(X, <span class="at">ci =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="fu">summary</span>(R_pear_ci)</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">#&gt; Pearson correlation summary</span></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 10</span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0239 to 1.0000</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt;   ci          : 95%</span></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt;   ci_method   : fisher_z</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt;   ci_width    : 0.179 to 0.439</span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt;   cross_zero  : 4 pair(s)</span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n_complete lwr     upr    fisher_z statistic p_value</span></span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7773   80         0.6724  0.8516 1.0385   9.1128    0.0000 </span></span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.2249   80         0.0054  0.4236 0.2288   2.0074    0.0447 </span></span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1741   80         -0.0474 0.3793 0.1759   1.5437    0.1227 </span></span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1250   80         -0.0974 0.3355 0.1257   1.1029    0.2701 </span></span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.0770   80         -0.1452 0.2918 0.0772   0.6771    0.4984 </span></span>
+<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0239  80         -0.2424 0.1968 -0.0239  -0.2100   0.8337 </span></span>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
+<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate  n_complete lwr          upr       fisher_z   statistic</span></span>
+<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7772944 80          0.672415903 0.8515753 1.03849848 9.1127871</span></span>
+<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.2248536 80          0.005403655 0.4236409 0.22876233 2.0073813</span></span>
+<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1741272 80         -0.047403236 0.3793314 0.17591984 1.5436903</span></span>
+<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1250327 80         -0.097358788 0.3355320 0.12569046 1.1029293</span></span>
+<span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.0770052 80         -0.145167838 0.2917853 0.07715795 0.6770583</span></span>
+<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt;  p_value     </span></span>
+<span id="cb4-32"><a href="#cb4-32" tabindex="-1"></a><span class="co">#&gt;  8.029223e-20</span></span>
+<span id="cb4-33"><a href="#cb4-33" tabindex="-1"></a><span class="co">#&gt;  4.470908e-02</span></span>
+<span id="cb4-34"><a href="#cb4-34" tabindex="-1"></a><span class="co">#&gt;  1.226634e-01</span></span>
+<span id="cb4-35"><a href="#cb4-35" tabindex="-1"></a><span class="co">#&gt;  2.700579e-01</span></span>
+<span id="cb4-36"><a href="#cb4-36" tabindex="-1"></a><span class="co">#&gt;  4.983690e-01</span></span></code></pre></div>
+</div>
+<div id="spearman-and-kendall" class="section level2">
+<h2>Spearman and Kendall</h2>
+<p>Spearman’s rho and Kendall’s tau are rank-based estimators. They are
+useful when monotone association is of interest and the analysis should
+be less sensitive to departures from strict linearity. Both functions
+also support optional large-sample confidence intervals through
+<code>ci = TRUE</code>.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">11</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">sort</span>(<span class="fu">rnorm</span>(<span class="dv">60</span>))</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>y <span class="ot">&lt;-</span> x<span class="sc">^</span><span class="dv">3</span> <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">60</span>, <span class="at">sd =</span> <span class="fl">0.5</span>)</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>dat_mon <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x =</span> x, <span class="at">y =</span> y)</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="fu">pearson_corr</span>(dat_mon)</span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&gt; Pearson correlation matrix</span></span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&gt;   method      : pearson</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 2 x 2</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="co">#&gt;        x      y</span></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co">#&gt; x 1.0000 0.7839</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="co">#&gt; y 0.7839 1.0000</span></span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="fu">spearman_rho</span>(dat_mon)</span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a><span class="co">#&gt; Spearman correlation matrix</span></span>
+<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a><span class="co">#&gt;   method      : spearman</span></span>
+<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 2 x 2</span></span>
+<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a><span class="co">#&gt;        x      y</span></span>
+<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a><span class="co">#&gt; x 1.0000 0.8007</span></span>
+<span id="cb5-21"><a href="#cb5-21" tabindex="-1"></a><span class="co">#&gt; y 0.8007 1.0000</span></span>
+<span id="cb5-22"><a href="#cb5-22" tabindex="-1"></a><span class="fu">kendall_tau</span>(dat_mon)</span>
+<span id="cb5-23"><a href="#cb5-23" tabindex="-1"></a><span class="co">#&gt; Kendall correlation matrix</span></span>
+<span id="cb5-24"><a href="#cb5-24" tabindex="-1"></a><span class="co">#&gt;   method      : kendall</span></span>
+<span id="cb5-25"><a href="#cb5-25" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 2 x 2</span></span>
+<span id="cb5-26"><a href="#cb5-26" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-27"><a href="#cb5-27" tabindex="-1"></a><span class="co">#&gt;        x      y</span></span>
+<span id="cb5-28"><a href="#cb5-28" tabindex="-1"></a><span class="co">#&gt; x 1.0000 0.6395</span></span>
+<span id="cb5-29"><a href="#cb5-29" tabindex="-1"></a><span class="co">#&gt; y 0.6395 1.0000</span></span></code></pre></div>
+<p>In this setting the relationship is monotone but not linear, so a
+rank-based summary is often the clearer first description.</p>
+<p>When interval estimation is required, the same matrix-style interface
+is kept.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>fit_spr_ci <span class="ot">&lt;-</span> <span class="fu">spearman_rho</span>(X, <span class="at">ci =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>fit_ken_ci <span class="ot">&lt;-</span> <span class="fu">kendall_tau</span>(X, <span class="at">ci =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="fu">summary</span>(fit_spr_ci)</span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt; Spearman correlation summary</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 10</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0023 to 1.0000</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co">#&gt;   ci          : 95%</span></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt;   ci_method   : jackknife_euclidean_likelihood</span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt;   ci_width    : 0.197 to 0.476</span></span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="co">#&gt;   cross_zero  : 5 pair(s)</span></span>
+<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n_complete lwr     upr    fisher_z statistic p_value</span></span>
+<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7766   80         0.6776  0.8750 1.0368   9.0981    0.0000 </span></span>
+<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1866   80         -0.0400 0.4130 0.1888   1.6570    0.0975 </span></span>
+<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.1750   80         -0.0525 0.4023 0.1768   1.5517    0.1207 </span></span>
+<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1318   80         -0.0975 0.3609 0.1326   1.1634    0.2447 </span></span>
+<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.1047   80         -0.1335 0.3427 0.1051   0.9220    0.3565 </span></span>
+<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0023  80         -0.2312 0.2267 -0.0023  -0.0200   0.9841 </span></span>
+<span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-25"><a href="#cb6-25" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
+<span id="cb6-26"><a href="#cb6-26" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-27"><a href="#cb6-27" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate  n_complete lwr         upr       fisher_z  statistic</span></span>
+<span id="cb6-28"><a href="#cb6-28" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7766292 80          0.67755395 0.8749743 1.0368199 9.0980576</span></span>
+<span id="cb6-29"><a href="#cb6-29" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1866151 80         -0.04003742 0.4129867 0.1888278 1.6569574</span></span>
+<span id="cb6-30"><a href="#cb6-30" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.1750117 80         -0.05247634 0.4022706 0.1768321 1.5516955</span></span>
+<span id="cb6-31"><a href="#cb6-31" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1318097 80         -0.09748395 0.3609353 0.1325811 1.1633941</span></span>
+<span id="cb6-32"><a href="#cb6-32" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.1046882 80         -0.13348567 0.3427447 0.1050732 0.9220137</span></span>
+<span id="cb6-33"><a href="#cb6-33" tabindex="-1"></a><span class="co">#&gt;  p_value     </span></span>
+<span id="cb6-34"><a href="#cb6-34" tabindex="-1"></a><span class="co">#&gt;  9.196175e-20</span></span>
+<span id="cb6-35"><a href="#cb6-35" tabindex="-1"></a><span class="co">#&gt;  9.752809e-02</span></span>
+<span id="cb6-36"><a href="#cb6-36" tabindex="-1"></a><span class="co">#&gt;  1.207351e-01</span></span>
+<span id="cb6-37"><a href="#cb6-37" tabindex="-1"></a><span class="co">#&gt;  2.446697e-01</span></span>
+<span id="cb6-38"><a href="#cb6-38" tabindex="-1"></a><span class="co">#&gt;  3.565214e-01</span></span>
+<span id="cb6-39"><a href="#cb6-39" tabindex="-1"></a><span class="fu">summary</span>(fit_ken_ci)</span>
+<span id="cb6-40"><a href="#cb6-40" tabindex="-1"></a><span class="co">#&gt; Kendall correlation summary</span></span>
+<span id="cb6-41"><a href="#cb6-41" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
+<span id="cb6-42"><a href="#cb6-42" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
+<span id="cb6-43"><a href="#cb6-43" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 10</span></span>
+<span id="cb6-44"><a href="#cb6-44" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
+<span id="cb6-45"><a href="#cb6-45" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
+<span id="cb6-46"><a href="#cb6-46" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0032 to 1.0000</span></span>
+<span id="cb6-47"><a href="#cb6-47" tabindex="-1"></a><span class="co">#&gt;   ci          : 95%</span></span>
+<span id="cb6-48"><a href="#cb6-48" tabindex="-1"></a><span class="co">#&gt;   ci_method   : fieller</span></span>
+<span id="cb6-49"><a href="#cb6-49" tabindex="-1"></a><span class="co">#&gt;   ci_width    : 0.195 to 0.295</span></span>
+<span id="cb6-50"><a href="#cb6-50" tabindex="-1"></a><span class="co">#&gt;   cross_zero  : 5 pair(s)</span></span>
+<span id="cb6-51"><a href="#cb6-51" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-52"><a href="#cb6-52" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n_complete lwr     upr    fisher_z statistic p_value</span></span>
+<span id="cb6-53"><a href="#cb6-53" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.5861   80         0.4800  0.6752 0.6717   5.8939    0.0000 </span></span>
+<span id="cb6-54"><a href="#cb6-54" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.1152   80         -0.0329 0.2583 0.1157   1.0153    0.3100 </span></span>
+<span id="cb6-55"><a href="#cb6-55" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1133   80         -0.0348 0.2565 0.1138   0.9984    0.3181 </span></span>
+<span id="cb6-56"><a href="#cb6-56" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.0880   80         -0.0603 0.2325 0.0882   0.7740    0.4389 </span></span>
+<span id="cb6-57"><a href="#cb6-57" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.0741   80         -0.0743 0.2192 0.0742   0.6510    0.5151 </span></span>
+<span id="cb6-58"><a href="#cb6-58" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0032  80         -0.1506 0.1444 -0.0032  -0.0278   0.9778 </span></span>
+<span id="cb6-59"><a href="#cb6-59" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-60"><a href="#cb6-60" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
+<span id="cb6-61"><a href="#cb6-61" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-62"><a href="#cb6-62" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate   n_complete lwr         upr       fisher_z   statistic</span></span>
+<span id="cb6-63"><a href="#cb6-63" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.58607595 80          0.48004770 0.6752274 0.67166789 5.8938618</span></span>
+<span id="cb6-64"><a href="#cb6-64" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.11518987 80         -0.03290630 0.2583364 0.11570344 1.0152936</span></span>
+<span id="cb6-65"><a href="#cb6-65" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.11329114 80         -0.03482794 0.2565401 0.11377960 0.9984119</span></span>
+<span id="cb6-66"><a href="#cb6-66" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.08797468 80         -0.06034551 0.2324940 0.08820270 0.7739756</span></span>
+<span id="cb6-67"><a href="#cb6-67" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.07405063 80         -0.07429803 0.2191928 0.07418643 0.6509833</span></span>
+<span id="cb6-68"><a href="#cb6-68" tabindex="-1"></a><span class="co">#&gt;  p_value     </span></span>
+<span id="cb6-69"><a href="#cb6-69" tabindex="-1"></a><span class="co">#&gt;  3.772727e-09</span></span>
+<span id="cb6-70"><a href="#cb6-70" tabindex="-1"></a><span class="co">#&gt;  3.099659e-01</span></span>
+<span id="cb6-71"><a href="#cb6-71" tabindex="-1"></a><span class="co">#&gt;  3.180797e-01</span></span>
+<span id="cb6-72"><a href="#cb6-72" tabindex="-1"></a><span class="co">#&gt;  4.389452e-01</span></span>
+<span id="cb6-73"><a href="#cb6-73" tabindex="-1"></a><span class="co">#&gt;  5.150573e-01</span></span></code></pre></div>
+</div>
+<div id="distance-correlation" class="section level2">
+<h2>Distance correlation</h2>
+<p>Distance correlation addresses a broader target. It is designed to
+detect general dependence rather than only linear or monotone structure.
+The function also supports optional hypothesis testing through
+<code>p_value = TRUE</code>.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">12</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">runif</span>(<span class="dv">100</span>, <span class="sc">-</span><span class="dv">2</span>, <span class="dv">2</span>)</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>y <span class="ot">&lt;-</span> x<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">100</span>, <span class="at">sd =</span> <span class="fl">0.2</span>)</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>dat_nonlin <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x =</span> x, <span class="at">y =</span> y)</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="fu">pearson_corr</span>(dat_nonlin)</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt; Pearson correlation matrix</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt;   method      : pearson</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 2 x 2</span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt;        x      y</span></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt; x 1.0000 0.0045</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt; y 0.0045 1.0000</span></span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="fu">dcor</span>(dat_nonlin)</span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt; Distance correlation (dCor) matrix</span></span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt;   method      : distance_correlation</span></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 2 x 2</span></span>
+<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a><span class="co">#&gt;        x      y</span></span>
+<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a><span class="co">#&gt; x 1.0000 0.2064</span></span>
+<span id="cb7-21"><a href="#cb7-21" tabindex="-1"></a><span class="co">#&gt; y 0.2064 1.0000</span></span></code></pre></div>
+<p>This is a typical situation where Pearson correlation can be close to
+zero even though the variables are clearly dependent.</p>
+<p>If a formal inferential summary is needed, p-values can be requested
+directly.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>fit_dcor_p <span class="ot">&lt;-</span> <span class="fu">dcor</span>(dat_nonlin, <span class="at">p_value =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a><span class="fu">summary</span>(fit_dcor_p)</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="co">#&gt; Distance correlation summary</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 2 x 2</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 3</span></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt;   estimate    : 0.2064 to 1.0000</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="co">#&gt;   inference   : dcor_t_test</span></span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n_complete statistic df        p_value fisher_z</span></span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co">#&gt;  x     y     0.2064   100        14.6861   4849.0000 0.0000  0.2094  </span></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
+<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate  n_complete statistic df   p_value      fisher_z </span></span>
+<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a><span class="co">#&gt;  x     y     0.2063619 100        14.68607  4849 4.156224e-48 0.2093684</span></span></code></pre></div>
+</div>
+<div id="missing-values" class="section level2">
+<h2>Missing values</h2>
+<p>The default wide-data behaviour is strict validation. Missing values
+are rejected unless the function explicitly supports a relaxed mode
+through <code>na_method = &quot;pairwise&quot;</code>.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>X_miss <span class="ot">&lt;-</span> X</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>X_miss<span class="sc">$</span>x2[<span class="fu">c</span>(<span class="dv">3</span>, <span class="dv">7</span>)] <span class="ot">&lt;-</span> <span class="cn">NA</span></span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">pearson_corr</span>(X_miss))</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="co">#&gt; Error in eval(expr, envir) : Missing values are not allowed.</span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="fu">pearson_corr</span>(X_miss, <span class="at">na_method =</span> <span class="st">&quot;pairwise&quot;</span>)</span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="co">#&gt; Pearson correlation matrix</span></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co">#&gt;   method      : pearson</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co">#&gt;        x1      x2     x3      x4</span></span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="co">#&gt; x1 1.0000  0.7742 0.1250  0.0770</span></span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a><span class="co">#&gt; x2 0.7742  1.0000 0.1829 -0.0285</span></span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="co">#&gt; x3 0.1250  0.1829 1.0000  0.2249</span></span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a><span class="co">#&gt; x4 0.0770 -0.0285 0.2249  1.0000</span></span></code></pre></div>
+<p>When <code>na_method = &quot;pairwise&quot;</code>, the package uses pairwise
+complete observations for the affected estimator. That is convenient,
+but it also means different pairs may be based on different effective
+sample sizes.</p>
+</div>
+<div id="practical-guidance" class="section level2">
+<h2>Practical guidance</h2>
+<p>In ordinary wide-data work, the following sequence is usually
+defensible.</p>
+<ul>
+<li>Start with <code>pearson_corr()</code> when the variables are
+continuous and linear association is the scientific target.</li>
+<li>Use <code>spearman_rho()</code> or <code>kendall_tau()</code> when a
+monotone summary is preferred.</li>
+<li>Use <code>dcor()</code> when non-linear dependence is plausible and
+a zero Pearson correlation would be misleading.</li>
+</ul>
+<p>The next vignette addresses settings where this basic family is still
+not sufficient because the data are contaminated by outliers or the
+number of variables is large relative to sample size.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

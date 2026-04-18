@@ -17,6 +17,7 @@ bland_altman(
   two = 1.96,
   mode = 1L,
   conf_level = 0.95,
+  n_threads = getOption("matrixCorr.threads", 1L),
   verbose = FALSE
 )
 
@@ -28,6 +29,7 @@ bland_altman_repeated(
   time,
   two = 1.96,
   conf_level = 0.95,
+  n_threads = getOption("matrixCorr.threads", 1L),
   include_slope = FALSE,
   use_ar1 = FALSE,
   ar1_rho = NA_real_,
@@ -45,10 +47,13 @@ biweight_mid_corr(
   mad_consistent = FALSE,
   w = NULL,
   sparse_threshold = NULL,
-  n_threads = getOption("matrixCorr.threads", 1L)
+  n_threads = getOption("matrixCorr.threads", 1L),
+  output = c("matrix", "sparse", "edge_list"),
+  threshold = 0,
+  diag = TRUE
 )
 
-distance_corr(data, check_na = TRUE)
+distance_corr(data, na_method = c("error", "pairwise"), ...)
 
 partial_correlation(
   data,
@@ -56,7 +61,10 @@ partial_correlation(
   lambda = 0.001,
   return_cov_precision = FALSE,
   ci = FALSE,
-  conf_level = 0.95
+  conf_level = 0.95,
+  output = c("matrix", "sparse", "edge_list"),
+  threshold = 0,
+  diag = TRUE
 )
 
 ccc_lmm_reml(
@@ -116,6 +124,8 @@ define the limits of agreement.}
 
 \item{conf_level}{Confidence level.}
 
+\item{n_threads}{Integer number of OpenMP threads.}
+
 \item{verbose}{Logical; print brief progress or diagnostic output.}
 
 \item{data}{A \code{data.frame}, matrix, or repeated-measures dataset accepted by
@@ -145,7 +155,8 @@ proportion of outliers on each side.}
 
 \item{pearson_fallback}{Character fallback policy used by \code{bicor()}.}
 
-\item{na_method}{Missing-data policy used by \code{bicor()}.}
+\item{na_method}{Missing-data policy forwarded to the replacement function
+when supported.}
 
 \item{mad_consistent}{Logical; if \code{TRUE}, uses the consistency-corrected MAD.}
 
@@ -153,9 +164,14 @@ proportion of outliers on each side.}
 
 \item{sparse_threshold}{Optional threshold controlling sparse output.}
 
-\item{n_threads}{Integer number of OpenMP threads.}
+\item{output}{Output representation for the computed estimates.}
 
-\item{check_na}{Logical validation flag used by \code{dcor()}.}
+\item{threshold}{Non-negative absolute-value filter for non-matrix outputs.}
+
+\item{diag}{Logical; whether to include diagonal entries in non-matrix outputs.}
+
+\item{...}{Additional arguments forwarded to the replacement function when
+supported.}
 
 \item{lambda}{Numeric regularisation strength used by \code{pcorr()}.}
 
@@ -165,7 +181,8 @@ precision matrices.}
 \item{ci}{Logical; if \code{TRUE}, request confidence intervals when supported by
 the replacement function.}
 
-\item{rind}{Character; column identifying subjects for \code{ccc_rm_reml()}.}
+\item{rind}{Character; column identifying subjects, forwarded as \code{subject}
+to \code{ccc_rm_reml()}.}
 
 \item{interaction}{Logical; forwarded to \code{ccc_rm_reml()}.}
 

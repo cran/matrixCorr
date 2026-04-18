@@ -4,18 +4,21 @@
 \alias{pcorr}
 \alias{print.partial_corr}
 \alias{summary.partial_corr}
-\alias{print.summary_partial_corr}
+\alias{print.summary.partial_corr}
 \alias{plot.partial_corr}
 \title{Partial correlation matrix (sample / ridge / OAS / graphical lasso)}
 \usage{
 pcorr(
   data,
   method = c("sample", "oas", "ridge", "glasso"),
-  lambda = 0.001,
+  ci = FALSE,
+  conf_level = 0.95,
   return_cov_precision = FALSE,
   return_p_value = FALSE,
-  ci = FALSE,
-  conf_level = 0.95
+  lambda = 0.001,
+  output = c("matrix", "sparse", "edge_list"),
+  threshold = 0,
+  diag = TRUE
 )
 
 \method{print}{partial_corr}(
@@ -40,7 +43,7 @@ pcorr(
   ...
 )
 
-\method{print}{summary_partial_corr}(
+\method{print}{summary.partial_corr}(
   x,
   digits = 4,
   n = NULL,
@@ -71,11 +74,13 @@ Non-numeric columns are ignored.}
 \item{method}{Character; one of \code{"sample"}, \code{"oas"},
 \code{"ridge"}, or \code{"glasso"}. Default \code{"sample"}.}
 
-\item{lambda}{Numeric \eqn{\ge 0}; regularisation strength. For
-\code{method = "ridge"}, this is the penalty added to the covariance
-diagonal. For \code{method = "glasso"}, this is the off-diagonal
-precision-matrix \eqn{\ell_1} penalty. Ignored otherwise. Default
-\code{1e-3}.}
+\item{ci}{Logical (default \code{FALSE}). If \code{TRUE}, attach Fisher-z
+confidence intervals for the off-diagonal partial correlations. This
+option is available only for the classical \code{method = "sample"}
+estimator in the ordinary low-dimensional setting.}
+
+\item{conf_level}{Confidence level used when \code{ci = TRUE}. Default is
+\code{0.95}.}
 
 \item{return_cov_precision}{Logical; if \code{TRUE}, also return the
 covariance (\code{cov}) and precision (\code{precision}) matrices used to
@@ -86,13 +91,32 @@ two-sided p-values for testing whether each sample partial correlation is
 zero. This option is available only for \code{method = "sample"} and
 requires \eqn{n > p}. Default to \code{FALSE}.}
 
-\item{ci}{Logical (default \code{FALSE}). If \code{TRUE}, attach Fisher-z
-confidence intervals for the off-diagonal partial correlations. This
-option is available only for the classical \code{method = "sample"}
-estimator in the ordinary low-dimensional setting.}
+\item{lambda}{Numeric \eqn{\ge 0}; regularisation strength. For
+\code{method = "ridge"}, this is the penalty added to the covariance
+diagonal. For \code{method = "glasso"}, this is the off-diagonal
+precision-matrix \eqn{\ell_1} penalty. Ignored otherwise. Default
+\code{1e-3}.}
 
-\item{conf_level}{Confidence level used when \code{ci = TRUE}. Default is
-\code{0.95}.}
+\item{output}{Output representation for the computed estimates.
+\itemize{
+\item \code{"matrix"} (default): full dense matrix; best when you need
+matrix algebra, dense heatmaps, or full compatibility with existing code.
+\item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+retained entries; best when many values are dropped by thresholding.
+\item \code{"edge_list"}: long-form data frame with columns
+\code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+and network-style workflows.
+}}
+
+\item{threshold}{Non-negative absolute-value filter for non-matrix outputs:
+keep entries with \code{abs(value) >= threshold}. Use
+\code{threshold > 0} when you want only stronger associations (typically
+with \code{output = "sparse"} or \code{"edge_list"}). Keep
+\code{threshold = 0} to retain all values. Must be \code{0} when
+\code{output = "matrix"}.}
+
+\item{diag}{Logical; whether to include diagonal entries in
+\code{"sparse"} and \code{"edge_list"} outputs.}
 
 \item{x}{An object of class \code{partial_corr}.}
 
@@ -162,7 +186,7 @@ definiteness.
 
 Invisibly returns \code{x}.
 
-A compact summary object of class \code{summary_partial_corr}.
+A compact summary object of class \code{summary.partial_corr}.
 
 A \code{ggplot} object.
 }

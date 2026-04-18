@@ -4,6 +4,7 @@
 #include <vector>
 #include <cmath>
 #include "matrixCorr_detail.h"
+#include "threshold_triplets.h"
 // [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::plugins(openmp)]]
 
@@ -60,7 +61,6 @@ double bisect_root(Func&& g, double lo, double hi,
   double left = lo;
   double right = hi;
   double f_left = f_lo;
-  double f_right = f_hi;
 
   for (int iter = 0; iter < max_iter; ++iter) {
     const double mid = 0.5 * (left + right);
@@ -74,7 +74,6 @@ double bisect_root(Func&& g, double lo, double hi,
       f_left = f_mid;
     } else {
       right = mid;
-      f_right = f_mid;
     }
   }
 
@@ -263,6 +262,8 @@ Rcpp::List spearman_matrix_pairwise_cpp(SEXP X_,
   for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
     const arma::uword uj = static_cast<arma::uword>(j);
     const arma::uvec& idx_j = finite_idx[uj];
+    const arma::uword n_idx_j = idx_j.n_elem;
+    const arma::uword* idx_j_ptr = idx_j.memptr();
     const double* colj_ptr = X.colptr(uj);
 
     static thread_local std::vector<arma::uword> overlap_idx;
@@ -273,16 +274,17 @@ Rcpp::List spearman_matrix_pairwise_cpp(SEXP X_,
 
     for (arma::uword k = uj + 1u; k < p; ++k) {
       const arma::uvec& idx_k = finite_idx[k];
-      const std::size_t possible = std::min(idx_j.n_elem, idx_k.n_elem);
+      const arma::uword n_idx_k = idx_k.n_elem;
+      const std::size_t possible = std::min(n_idx_j, n_idx_k);
       if (possible < 2u) continue;
 
+      const arma::uword* idx_k_ptr = idx_k.memptr();
+      arma::uword ia = 0u, ib = 0u;
       overlap_idx.clear();
       overlap_idx.reserve(possible);
-
-      arma::uword ia = 0u, ib = 0u;
-      while (ia < idx_j.n_elem && ib < idx_k.n_elem) {
-        const arma::uword a = idx_j[ia];
-        const arma::uword b = idx_k[ib];
+      while (ia < n_idx_j && ib < n_idx_k) {
+        const arma::uword a = idx_j_ptr[ia];
+        const arma::uword b = idx_k_ptr[ib];
         if (a == b) {
           overlap_idx.push_back(a);
           ++ia;
@@ -361,4 +363,71 @@ Rcpp::List spearman_matrix_pairwise_cpp(SEXP X_,
     out["conf_level"] = conf_level;
   }
   return out;
+}
+
+// Complete-data Spearman upper-triplet kernel for thresholded outputs.
+// [[Rcpp::export]]
+Rcpp::List spearman_threshold_triplets_cpp(SEXP X_,
+                                           const double threshold = 0.0,
+                                           const bool diag = true,
+                                           const int block_size = 256) {
+  if (!Rf_isReal(X_) || !Rf_isMatrix(X_))
+    Rcpp::stop("Numeric double matrix required.");
+  if (!(threshold >= 0.0) || !std::isfinite(threshold))
+    Rcpp::stop("threshold must be finite and >= 0.");
+  if (block_size < 1)
+    Rcpp::stop("block_size must be >= 1.");
+
+  const arma::uword n = static_cast<arma::uword>(Rf_nrows(X_));
+  const arma::uword p = static_cast<arma::uword>(Rf_ncols(X_));
+  if (n < 2 || p < 2) Rcpp::stop("Need >= 2 rows and >= 2 columns.");
+
+  arma::mat X(REAL(X_), n, p, /*copy_aux_mem*/ false, /*strict*/ true);
+  const double mean_rank = 0.5 * (static_cast<double>(n) + 1.0);
+
+  arma::mat Z(n, p, arma::fill::zeros);
+  std::vector<unsigned char> valid(static_cast<std::size_t>(p), 0u);
+
+  for (arma::uword j = 0; j < p; ++j) {
+    arma::vec rj = rank_vector(X.col(j));
+    rj -= mean_rank;
+    const double ss = arma::dot(rj, rj);
+    if (ss > 0.0 && std::isfinite(ss)) {
+      Z.col(j) = rj / std::sqrt(ss);
+      valid[static_cast<std::size_t>(j)] = 1u;
+    }
+  }
+
+  const auto trip = matrixCorr_detail::threshold_triplets::collect_upper_triplets(
+    static_cast<std::size_t>(p),
+    static_cast<std::size_t>(block_size),
+    diag,
+    threshold,
+    [&](std::size_t j0, std::size_t j1, std::size_t k0, std::size_t k1) -> arma::mat {
+      arma::mat blk = Z.cols(static_cast<arma::uword>(j0), static_cast<arma::uword>(j1 - 1u)).t() *
+        Z.cols(static_cast<arma::uword>(k0), static_cast<arma::uword>(k1 - 1u));
+
+      for (std::size_t r = 0u; r < (j1 - j0); ++r) {
+        const std::size_t gj = j0 + r;
+        for (std::size_t c = 0u; c < (k1 - k0); ++c) {
+          const std::size_t gk = k0 + c;
+          double val = NA_REAL;
+          if (valid[gj] && valid[gk]) {
+            if (gj == gk) {
+              val = 1.0;
+            } else {
+              val = clamp_corr(blk(
+                static_cast<arma::uword>(r),
+                static_cast<arma::uword>(c)
+              ));
+            }
+          }
+          blk(static_cast<arma::uword>(r), static_cast<arma::uword>(c)) = val;
+        }
+      }
+      return blk;
+    }
+  );
+
+  return matrixCorr_detail::threshold_triplets::as_list(trip);
 }

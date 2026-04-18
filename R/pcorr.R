@@ -30,6 +30,24 @@
 #'   estimator in the ordinary low-dimensional setting.
 #' @param conf_level Confidence level used when \code{ci = TRUE}. Default is
 #'   \code{0.95}.
+#' @param output Output representation for the computed estimates.
+#'   \itemize{
+#'   \item \code{"matrix"} (default): full dense matrix; best when you need
+#'   matrix algebra, dense heatmaps, or full compatibility with existing code.
+#'   \item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+#'   retained entries; best when many values are dropped by thresholding.
+#'   \item \code{"edge_list"}: long-form data frame with columns
+#'   \code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+#'   and network-style workflows.
+#'   }
+#' @param threshold Non-negative absolute-value filter for non-matrix outputs:
+#'   keep entries with \code{abs(value) >= threshold}. Use
+#'   \code{threshold > 0} when you want only stronger associations (typically
+#'   with \code{output = "sparse"} or \code{"edge_list"}). Keep
+#'   \code{threshold = 0} to retain all values. Must be \code{0} when
+#'   \code{output = "matrix"}.
+#' @param diag Logical; whether to include diagonal entries in
+#'   \code{"sparse"} and \code{"edge_list"} outputs.
 #'
 #' @return An object of class \code{"partial_corr"} (a list) with elements:
 #'   \itemize{
@@ -306,9 +324,17 @@
 #'
 #' @export
 pcorr <- function(data, method = c("sample","oas","ridge","glasso"),
-                                lambda = 1e-3, return_cov_precision = FALSE,
-                                return_p_value = FALSE, ci = FALSE,
-                                conf_level = 0.95) {
+                                ci = FALSE, conf_level = 0.95,
+                                return_cov_precision = FALSE,
+                                return_p_value = FALSE, lambda = 1e-3,
+                                output = c("matrix", "sparse", "edge_list"),
+                                threshold = 0,
+                                diag = TRUE) {
+  output_cfg <- .mc_validate_output_args(
+    output = output,
+    threshold = threshold,
+    diag = diag
+  )
   method <- match.arg(method)
   lambda <- check_scalar_numeric(lambda, arg = "lambda", lower = 0, closed_lower = TRUE)
   lambda <- as.numeric(lambda)
@@ -317,6 +343,14 @@ pcorr <- function(data, method = c("sample","oas","ridge","glasso"),
   check_bool(ci, arg = "ci")
   if (isTRUE(ci)) {
     check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
+  }
+  if (!identical(output_cfg$output, "matrix") &&
+      (isTRUE(return_cov_precision) || isTRUE(return_p_value) || isTRUE(ci))) {
+    abort_bad_arg(
+      "output",
+      message = "non-matrix outputs currently support point estimates only.",
+      .hint = "Set `.arg return_cov_precision = FALSE`, `.arg return_p_value = FALSE`, and `.arg ci = FALSE`."
+    )
   }
 
   numeric_data <-
@@ -359,12 +393,12 @@ pcorr <- function(data, method = c("sample","oas","ridge","glasso"),
   # set dimnames (cheap; attributes only)
   dn <- list(colnames(numeric_data), colnames(numeric_data))
   if (!is.null(res$pcor)) {
-    dimnames(res$pcor) <- dn
-    if (!is.null(res$p_value))   dimnames(res$p_value)   <- dn
-    if (!is.null(res$cov))       dimnames(res$cov)       <- dn
-    if (!is.null(res$precision)) dimnames(res$precision) <- dn
+    res$pcor <- structure(res$pcor, dimnames = dn)
+    if (!is.null(res$p_value))   res$p_value <- structure(res$p_value, dimnames = dn)
+    if (!is.null(res$cov))       res$cov <- structure(res$cov, dimnames = dn)
+    if (!is.null(res$precision)) res$precision <- structure(res$precision, dimnames = dn)
   } else {
-    pcor <- res[[1]]; dimnames(pcor) <- dn; res <- list(pcor = pcor)
+    res <- list(pcor = structure(res[[1L]], dimnames = dn))
   }
 
   diagnostics <- list(
@@ -400,32 +434,36 @@ pcorr <- function(data, method = c("sample","oas","ridge","glasso"),
   res$rho    <- if (identical(method, "oas"))   res$rho %||% NA_real_ else NA_real_
   res$jitter <- res$jitter %||% NA_real_
   res$diagnostics <- diagnostics
-  if (!is.null(res$p_value)) {
-    res$inference <- list(
-      method = "partial_t_test",
-      p_value = res$p_value
-    )
-  }
   if (!is.null(ci_attr)) {
     res$ci <- ci_attr
   }
-  attr(res$pcor, "diagnostics") <- diagnostics
-  if (!is.null(res$inference)) {
-    attr(res$pcor, "inference") <- res$inference
-    attr(res, "inference") <- res$inference
+  out <- structure(
+    res,
+    class = c("partial_corr", "list"),
+    method = method,
+    ci = ci_attr,
+    conf.level = if (!is.null(ci_attr)) conf_level else NULL,
+    ci.method = if (!is.null(ci_attr)) ci_attr$ci.method else NULL
+  )
+  if (identical(output_cfg$output, "matrix")) {
+    return(out)
   }
-  if (!is.null(ci_attr)) {
-    attr(res$pcor, "ci") <- ci_attr
-    attr(res$pcor, "conf.level") <- conf_level
-    attr(res$pcor, "ci.method") <- ci_attr$ci.method
-    attr(res, "ci") <- ci_attr
-    attr(res, "conf.level") <- conf_level
-    attr(res, "ci.method") <- ci_attr$ci.method
-  }
-  attr(res, "diagnostics") <- diagnostics
-  res <- structure(res, class = c("partial_corr", "list"))
-  attr(res, "method") <- method
-  res
+
+  pcor_obj <- .mc_structure_corr_matrix(
+    out$pcor,
+    class_name = "partial_corr_matrix",
+    method = paste0("partial_correlation_", method),
+    description = "Partial correlation matrix",
+    diagnostics = diagnostics,
+    dimnames = dn,
+    classes = c("partial_corr_matrix", "matrix")
+  )
+  .mc_finalize_corr_output(
+    pcor_obj,
+    output = output_cfg$output,
+    threshold = output_cfg$threshold,
+    diag = output_cfg$diag
+  )
 }
 
 
@@ -438,6 +476,9 @@ pcorr <- function(data, method = c("sample","oas","ridge","glasso"),
 }
 
 .mc_partial_corr_ci_attr <- function(x) {
+  if (inherits(x, "partial_corr") && !is.null(x$ci)) {
+    return(x$ci)
+  }
   attr(x, "ci", exact = TRUE)
 }
 
@@ -458,8 +499,8 @@ pcorr <- function(data, method = c("sample","oas","ridge","glasso"),
   if (is.null(rn)) rn <- as.character(seq_len(nrow(est)))
   if (is.null(cn)) cn <- as.character(seq_len(ncol(est)))
 
-  ci <- attr(object, "ci", exact = TRUE)
-  diag_attr <- attr(object, "diagnostics", exact = TRUE)
+  ci <- object$ci %||% attr(object, "ci", exact = TRUE)
+  diag_attr <- object$diagnostics %||% attr(object, "diagnostics", exact = TRUE)
   p_value <- object$p_value %||% NULL
   include_ci <- identical(show_ci, "yes") && !is.null(ci)
 
@@ -503,7 +544,7 @@ pcorr <- function(data, method = c("sample","oas","ridge","glasso"),
   if ("p_value" %in% names(df)) df$p_value <- as.numeric(df$p_value)
   if ("n_complete" %in% names(df)) df$n_complete <- as.integer(df$n_complete)
 
-  out <- structure(df, class = c("summary_partial_corr", "data.frame"))
+  out <- .mc_finalize_summary_df(df, class_name = "summary.partial_corr")
   attr(out, "overview") <- .mc_summary_corr_matrix(object$pcor)
   attr(out, "has_ci") <- include_ci
   attr(out, "conf.level") <- if (is.null(ci)) NA_real_ else ci$conf.level
@@ -671,7 +712,7 @@ print.partial_corr <- function(
 #' @param object An object of class \code{partial_corr}.
 #' @param ... Unused.
 #'
-#' @return A compact summary object of class \code{summary_partial_corr}.
+#' @return A compact summary object of class \code{summary.partial_corr}.
 #' @export
 summary.partial_corr <- function(object, n = NULL, topn = NULL,
                                  max_vars = NULL, width = NULL,
@@ -695,14 +736,14 @@ summary.partial_corr <- function(object, n = NULL, topn = NULL,
   out$rho <- object$rho %||% NA_real_
   out$jitter <- object$jitter %||% NA_real_
   out$header <- "Correlation summary"
-  class(out) <- c("summary_partial_corr", "summary_corr_matrix")
+  class(out) <- c("summary.partial_corr", "summary.matrixCorr", "summary.corr_matrix")
   out
 }
 
 #' @rdname pcorr
-#' @method print summary_partial_corr
+#' @method print summary.partial_corr
 #' @export
-print.summary_partial_corr <- function(x, digits = 4, n = NULL, topn = NULL,
+print.summary.partial_corr <- function(x, digits = 4, n = NULL, topn = NULL,
                                        max_vars = NULL, width = NULL,
                                        show_ci = NULL, ...) {
   if (inherits(x, "data.frame")) {
@@ -720,7 +761,7 @@ print.summary_partial_corr <- function(x, digits = 4, n = NULL, topn = NULL,
     )
     return(invisible(x))
   }
-  print.summary_corr_matrix(
+  print.summary.matrixCorr(
     x,
     digits = digits,
     n = n,
@@ -731,6 +772,8 @@ print.summary_partial_corr <- function(x, digits = 4, n = NULL, topn = NULL,
     ...
   )
 }
+
+print.summary_partial_corr <- print.summary.partial_corr
 
 
 #' @rdname pcorr
@@ -865,3 +908,4 @@ plot.partial_corr <- function(
 
   p
 }
+

@@ -5,9 +5,19 @@
 \alias{print.dcor}
 \alias{plot.dcor}
 \alias{summary.dcor}
+\alias{print.summary.dcor}
 \title{Pairwise Distance Correlation (dCor)}
 \usage{
-dcor(data, check_na = TRUE)
+dcor(
+  data,
+  na_method = c("error", "pairwise"),
+  p_value = FALSE,
+  n_threads = getOption("matrixCorr.threads", 1L),
+  output = c("matrix", "sparse", "edge_list"),
+  threshold = 0,
+  diag = TRUE,
+  ...
+)
 
 \method{print}{dcor}(
   x,
@@ -39,16 +49,59 @@ dcor(data, check_na = TRUE)
   show_ci = NULL,
   ...
 )
+
+\method{print}{summary.dcor}(
+  x,
+  digits = NULL,
+  n = NULL,
+  topn = NULL,
+  max_vars = NULL,
+  width = NULL,
+  show_ci = NULL,
+  ...
+)
 }
 \arguments{
 \item{data}{A numeric matrix or a data frame with at least two numeric
 columns. All non-numeric columns are dropped. Columns must be numeric.}
 
-\item{check_na}{Logical (default \code{TRUE}). When \code{TRUE}, inputs must
-be free of \code{NA}/\code{NaN}/\code{Inf}. Set to \code{FALSE} only if you
-have already handled missingness upstream.}
+\item{na_method}{Character scalar controlling missing-data handling.
+\code{"error"} rejects missing, \code{NaN}, and infinite values.
+\code{"pairwise"} recomputes each association on its own pairwise
+complete-case overlap.}
 
-\item{x}{An object of class \code{dcor}.}
+\item{p_value}{Logical (default \code{FALSE}). If \code{TRUE}, attach
+pairwise p-values, test statistics, and degrees of freedom from the
+distance-correlation t-test of independence.}
+
+\item{n_threads}{Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
+\code{getOption("matrixCorr.threads", 1L)}.}
+
+\item{output}{Output representation for the computed estimates.
+\itemize{
+\item \code{"matrix"} (default): full dense matrix; best when you need
+matrix algebra, dense heatmaps, or full compatibility with existing code.
+\item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+retained entries; best when many values are dropped by thresholding.
+\item \code{"edge_list"}: long-form data frame with columns
+\code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+and network-style workflows.
+}}
+
+\item{threshold}{Non-negative absolute-value filter for non-matrix outputs:
+keep entries with \code{abs(value) >= threshold}. Use
+\code{threshold > 0} when you want only stronger associations (typically
+with \code{output = "sparse"} or \code{"edge_list"}). Keep
+\code{threshold = 0} to retain all values. Must be \code{0} when
+\code{output = "matrix"}.}
+
+\item{diag}{Logical; whether to include diagonal entries in
+\code{"sparse"} and \code{"edge_list"} outputs.}
+
+\item{...}{Additional arguments passed to \code{ggplot2::theme()} or other
+\code{ggplot2} layers.}
+
+\item{x}{An object of class \code{summary.dcor}.}
 
 \item{digits}{Integer; number of decimal places to print.}
 
@@ -62,9 +115,6 @@ from console width.}
 \item{width}{Optional display width; defaults to \code{getOption("width")}.}
 
 \item{show_ci}{One of \code{"yes"} or \code{"no"}.}
-
-\item{...}{Additional arguments passed to \code{ggplot2::theme()} or other
-\code{ggplot2} layers.}
 
 \item{title}{Plot title. Default is \code{"Distance correlation heatmap"}.}
 
@@ -84,7 +134,11 @@ A symmetric numeric matrix where the \code{(i, j)} entry is the
 unbiased distance correlation between the \code{i}-th and \code{j}-th
 numeric columns. The object has class \code{dcor} with attributes
 \code{method = "distance_correlation"}, \code{description}, and
-\code{package = "matrixCorr"}.
+\code{package = "matrixCorr"}. When \code{p_value = TRUE}, the object also
+carries an \code{inference} attribute with matrices \code{estimate},
+\code{statistic}, \code{parameter}, and \code{p_value}, plus
+\code{attr(x, "diagnostics")$n_complete}. The main returned matrix remains
+the usual non-negative unbiased distance-correlation estimate.
 
 Invisibly returns \code{x}.
 
@@ -93,7 +147,8 @@ A \code{ggplot} object representing the heatmap.
 \description{
 Computes pairwise distance correlations for the numeric columns of a matrix
 or data frame using a high-performance 'C++' backend. Distance correlation
-detects general dependence, including non-linear relationships.
+detects general dependence, including non-linear relationships. Optional
+p-values are available via the bias-corrected distance-correlation t-test.
 }
 \details{
 Let \eqn{x \in \mathbb{R}^n} and \eqn{D^{(x)}} be the pairwise distance matrix
@@ -116,12 +171,30 @@ The unbiased distance correlation is
            {\sqrt{\widehat{\mathrm{dVar}}_u(x)\,\widehat{\mathrm{dVar}}_u(y)}} \in [0,1].}
 
 \strong{Computation.} All heavy lifting (distance matrices, U-centering,
-and unbiased scaling) is implemented in C++ (\code{ustat_dcor_matrix_cpp}), so
-the R wrapper only validates/coerces the input. OpenMP parallelises the
+and unbiased scaling) is implemented in C++ (\code{ustat_dcor_matrix_cpp}),
+so the R wrapper only validates/coerces the input. OpenMP parallelises the
 upper-triangular loops. The implementation includes a Huo-Szekely style
 univariate \eqn{O(n \log n)} dispatch for pairwise terms. We also have an exact
 unbiased \eqn{O(n^2)} fallback retained for robustness in small-sample or
 non-finite-path cases; no external dependencies are used.
+
+\strong{Inference.} When \code{p_value = TRUE}, the package computes the
+bias-corrected distance-correlation t-test of independence of Szekely and
+Rizzo (2013). Let \eqn{\widehat{\mathrm{dCor}}^\ast(x,y)} denote the signed
+bias-corrected distance correlation used internally by the test (that is,
+the same ratio before the package's usual clipping to \eqn{[0,1]}). With
+\deqn{M = \frac{n(n-3)}{2},}
+the test statistic is
+\deqn{
+T = \sqrt{M - 1}\;
+\frac{\widehat{\mathrm{dCor}}^\ast(x,y)}
+     {\sqrt{1 - \{\widehat{\mathrm{dCor}}^\ast(x,y)\}^2}},
+}
+referenced to a Student \eqn{t}-distribution with \eqn{M - 1} degrees of
+freedom. The reported p-value uses the upper-tail probability
+\eqn{P(t_{M-1} \ge T)}. This inference payload is attached as metadata; the
+main returned matrix is unchanged unless \code{p_value} is explicitly
+requested.
 }
 \note{
 Requires \eqn{n \ge 4}. Columns with (near) zero unbiased distance
@@ -129,7 +202,7 @@ variance yield \code{NA} in their row/column. Typical per-pair cost uses
 the \eqn{O(n \log n)} fast path, with \eqn{O(n^2)} fallback when needed.
 }
 \examples{
-##Independent variables -> dCor ~ 0
+## Independent variables -> dCor ~ 0
 set.seed(1)
 X <- cbind(a = rnorm(200), b = rnorm(200))
 D <- dcor(X)
@@ -157,6 +230,10 @@ colnames(X3) <- paste0("V", seq_len(p))
 D3 <- dcor(X3)
 print(D3[1:3, 1:3], digits = 2)
 
+## Optional inference
+D4 <- dcor(XY, p_value = TRUE)
+summary(D4)
+
 # Interactive viewing (requires shiny)
 if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
   view_corr_shiny(D)
@@ -164,13 +241,16 @@ if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
 
 }
 \references{
-Székely, G. J., Rizzo, M. L., & Bakirov, N. K. (2007).
+Szekely, G. J., Rizzo, M. L., & Bakirov, N. K. (2007).
 Measuring and testing dependence by correlation of distances.
-\emph{Annals of Statistics}, 35(6), 2769–2794.
+\emph{Annals of Statistics}, 35(6), 2769-2794.
 
-Székely, G. J., & Rizzo, M. L. (2013).
+Szekely, G. J., & Rizzo, M. L. (2013).
 The distance correlation t-test of independence.
 \emph{Journal of Multivariate Analysis}, 117, 193-213.
+
+Rizzo, M. L., & Szekely, G. J. (2024). \pkg{energy}: E-statistics
+(energy statistics). R package version 1.7-12.
 }
 \author{
 Thiago de paula Oliveira

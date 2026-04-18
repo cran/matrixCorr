@@ -8,7 +8,17 @@
 \alias{print.summary.spearman_rho}
 \title{Pairwise Spearman's rank correlation}
 \usage{
-spearman_rho(data, check_na = TRUE, ci = FALSE, conf_level = 0.95)
+spearman_rho(
+  data,
+  na_method = c("error", "pairwise"),
+  ci = FALSE,
+  conf_level = 0.95,
+  n_threads = getOption("matrixCorr.threads", 1L),
+  output = c("matrix", "sparse", "edge_list"),
+  threshold = 0,
+  diag = TRUE,
+  ...
+)
 
 \method{print}{spearman_rho}(
   x,
@@ -61,9 +71,10 @@ spearman_rho(data, check_na = TRUE, ci = FALSE, conf_level = 0.95)
 columns. All non-numeric columns will be excluded. Each column must have
 at least two non-missing values.}
 
-\item{check_na}{Logical (default \code{TRUE}). If \code{TRUE}, the input is
-required to be free of \code{NA}/\code{NaN}/\code{Inf}. Set to
-\code{FALSE} only when the caller already handled missingness.}
+\item{na_method}{Character scalar controlling missing-data handling.
+\code{"error"} rejects missing, \code{NaN}, and infinite values.
+\code{"pairwise"} recomputes each correlation on its own pairwise
+complete-case overlap.}
 
 \item{ci}{Logical (default \code{FALSE}). If \code{TRUE}, attach
 jackknife Euclidean-likelihood confidence intervals for the off-diagonal
@@ -71,6 +82,33 @@ Spearman correlations.}
 
 \item{conf_level}{Confidence level used when \code{ci = TRUE}. Default is
 \code{0.95}.}
+
+\item{n_threads}{Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
+\code{getOption("matrixCorr.threads", 1L)}.}
+
+\item{output}{Output representation for the computed estimates.
+\itemize{
+\item \code{"matrix"} (default): full dense matrix; best when you need
+matrix algebra, dense heatmaps, or full compatibility with existing code.
+\item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+retained entries; best when many values are dropped by thresholding.
+\item \code{"edge_list"}: long-form data frame with columns
+\code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+and network-style workflows.
+}}
+
+\item{threshold}{Non-negative absolute-value filter for non-matrix outputs:
+keep entries with \code{abs(value) >= threshold}. Use
+\code{threshold > 0} when you want only stronger associations (typically
+with \code{output = "sparse"} or \code{"edge_list"}). Keep
+\code{threshold = 0} to retain all values. Must be \code{0} when
+\code{output = "matrix"}.}
+
+\item{diag}{Logical; whether to include diagonal entries in
+\code{"sparse"} and \code{"edge_list"} outputs.}
+
+\item{...}{Additional arguments passed to \code{ggplot2::theme()} or other
+\code{ggplot2} layers.}
 
 \item{x}{An object of class \code{summary.spearman_rho}.}
 
@@ -89,9 +127,6 @@ from console width.}
 pairwise summary.}
 
 \item{show_ci}{One of \code{"yes"} or \code{"no"}.}
-
-\item{...}{Additional arguments passed to \code{ggplot2::theme()} or other
-\code{ggplot2} layers.}
 
 \item{title}{Plot title. Default is \code{"Spearman's rank correlation
 heatmap"}.}
@@ -184,8 +219,8 @@ covariance of ranks; standardising by \eqn{D^{-1/2}} gives \eqn{\widehat{\rho}_S
 Columns with zero rank variance (all values equal) are returned as \code{NA}
 along their row/column; the corresponding diagonal entry is also \code{NA}.
 
-When \code{check_na = FALSE}, each \eqn{(i,j)} estimate is recomputed on the
-pairwise complete-case overlap of columns \eqn{i} and \eqn{j}. When
+When \code{na_method = "pairwise"}, each \eqn{(i,j)} estimate is recomputed
+on the pairwise complete-case overlap of columns \eqn{i} and \eqn{j}. When
 \code{ci = TRUE}, confidence intervals are computed in 'C++' using the
 jackknife Euclidean-likelihood method of de Carvalho and Marques (2012).
 For a pairwise estimate \eqn{U = \hat\rho_S}, delete-one jackknife
@@ -208,8 +243,8 @@ per-pair delete-one recomputation work and are intended for inference rather
 than raw-matrix throughput.
 }
 \note{
-Missing values are not allowed when \code{check_na = TRUE}. Columns
-with fewer than two observations are excluded.
+Missing values are rejected when \code{na_method = "error"}. Columns
+with fewer than two usable observations are excluded.
 }
 \examples{
 ## Monotone transformation invariance (Spearman is rank-based)

@@ -8,7 +8,16 @@
 \alias{plot.ccc}
 \title{Pairwise Lin's concordance correlation coefficient}
 \usage{
-ccc(data, ci = FALSE, conf_level = 0.95, verbose = FALSE)
+ccc(
+  data,
+  ci = FALSE,
+  conf_level = 0.95,
+  n_threads = getOption("matrixCorr.threads", 1L),
+  output = c("matrix", "sparse", "edge_list"),
+  threshold = 0,
+  diag = TRUE,
+  verbose = FALSE
+)
 
 \method{print}{ccc}(
   x,
@@ -65,6 +74,30 @@ Non-numeric columns will be ignored.}
 
 \item{conf_level}{Confidence level for CI, default = 0.95}
 
+\item{n_threads}{Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
+\code{getOption("matrixCorr.threads", 1L)}.}
+
+\item{output}{Output representation for the computed estimates.
+\itemize{
+\item \code{"matrix"} (default): full dense matrix; best when you need
+matrix algebra, dense heatmaps, or full compatibility with existing code.
+\item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+retained entries; best when many values are dropped by thresholding.
+\item \code{"edge_list"}: long-form data frame with columns
+\code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+and network-style workflows.
+}}
+
+\item{threshold}{Non-negative absolute-value filter for non-matrix outputs:
+keep entries with \code{abs(value) >= threshold}. Use
+\code{threshold > 0} when you want only stronger associations (typically
+with \code{output = "sparse"} or \code{"edge_list"}). Keep
+\code{threshold = 0} to retain all values. Must be \code{0} when
+\code{output = "matrix"}.}
+
+\item{diag}{Logical; whether to include diagonal entries in
+\code{"sparse"} and \code{"edge_list"} outputs.}
+
 \item{verbose}{Logical; if TRUE, prints how many threads are used}
 
 \item{x}{An object of class \code{"ccc"} (either a matrix or a list with CIs).}
@@ -114,8 +147,8 @@ If \code{ci = TRUE}, returns a list with elements: \code{est},
 \code{lwr.ci}, \code{upr.ci}.
 
 For \code{summary.ccc}, a data frame with columns
-\code{method1}, \code{method2}, \code{estimate} and (optionally)
-\code{lwr}, \code{upr}.
+\code{item1}, \code{item2}, \code{estimate}, and (optionally)
+\code{lwr}, \code{upr}, plus \code{n_complete} when available.
 }
 \description{
 Computes all pairwise Lin's Concordance Correlation Coefficients (CCC)
@@ -130,7 +163,7 @@ absolute value of the Pearson correlation between variables. It can be
 legitimately computed even with small samples (e.g., 10 observations),
 and results are often similar to intraclass correlation coefficients.
 CCC provides a single summary of agreement, but it may not capture
-systematic bias; a Bland–Altman plot (differences vs. means) is recommended
+systematic bias; a Bland-Altman plot (differences vs. means) is recommended
 to visualize bias, proportional trends, and heteroscedasticity (see
 \code{\link{ba}}).
 }

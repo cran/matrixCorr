@@ -13,7 +13,7 @@
 #' legitimately computed even with small samples (e.g., 10 observations),
 #' and results are often similar to intraclass correlation coefficients.
 #' CCC provides a single summary of agreement, but it may not capture
-#' systematic bias; a Bland–Altman plot (differences vs. means) is recommended
+#' systematic bias; a Bland-Altman plot (differences vs. means) is recommended
 #' to visualize bias, proportional trends, and heteroscedasticity (see
 #' \code{\link{ba}}).
 #'
@@ -51,6 +51,26 @@
 #' Non-numeric columns will be ignored.
 #' @param ci Logical; if TRUE, return lower and upper confidence bounds
 #' @param conf_level Confidence level for CI, default = 0.95
+#' @param n_threads Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
+#'   \code{getOption("matrixCorr.threads", 1L)}.
+#' @param output Output representation for the computed estimates.
+#'   \itemize{
+#'   \item \code{"matrix"} (default): full dense matrix; best when you need
+#'   matrix algebra, dense heatmaps, or full compatibility with existing code.
+#'   \item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+#'   retained entries; best when many values are dropped by thresholding.
+#'   \item \code{"edge_list"}: long-form data frame with columns
+#'   \code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+#'   and network-style workflows.
+#'   }
+#' @param threshold Non-negative absolute-value filter for non-matrix outputs:
+#'   keep entries with \code{abs(value) >= threshold}. Use
+#'   \code{threshold > 0} when you want only stronger associations (typically
+#'   with \code{output = "sparse"} or \code{"edge_list"}). Keep
+#'   \code{threshold = 0} to retain all values. Must be \code{0} when
+#'   \code{output = "matrix"}.
+#' @param diag Logical; whether to include diagonal entries in
+#'   \code{"sparse"} and \code{"edge_list"} outputs.
 #' @param verbose Logical; if TRUE, prints how many threads are used
 #'
 #' @return A symmetric numeric matrix with class \code{"ccc"} and attributes:
@@ -101,16 +121,74 @@
 #' Bland J, Altman D (1986). Statistical methods for assessing agreement
 #' between two methods of clinical measurement. The Lancet 327: 307-310.
 #' @export
-ccc <- function(data, ci = FALSE, conf_level = 0.95, verbose = FALSE) {
+ccc <- function(data, ci = FALSE, conf_level = 0.95,
+                n_threads = getOption("matrixCorr.threads", 1L),
+                output = c("matrix", "sparse", "edge_list"),
+                threshold = 0,
+                diag = TRUE,
+                verbose = FALSE) {
+  output_cfg <- .mc_validate_thresholded_output_request(
+    output = output,
+    threshold = threshold,
+    diag = diag
+  )
   check_bool(ci, arg = "ci")
-  check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
+  if (isTRUE(ci)) {
+    check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
+  }
   check_bool(verbose, arg = "verbose")
 
   numeric_data <- validate_corr_input(data)
-  mat <- as.matrix(numeric_data)
+  mat <- numeric_data
   colnames_data <- colnames(numeric_data)
+  dn <- .mc_square_dimnames(colnames_data)
+  diag_payload <- list(
+    n_complete = matrix(
+      as.integer(nrow(mat)),
+      nrow = ncol(mat),
+      ncol = ncol(mat),
+      dimnames = dn
+    )
+  )
+
+  prev_threads <- .mc_prepare_omp_threads(
+    n_threads,
+    n_threads_missing = missing(n_threads)
+  )
+  if (!is.null(prev_threads)) {
+    on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+  }
 
   if (verbose) cat("Using", openmp_threads(), "OpenMP threads\n")
+
+  if (!isTRUE(ci) && .mc_supports_direct_threshold_path(
+    method = "ccc",
+    na_method = "error",
+    ci = FALSE,
+    output = output_cfg$output,
+    threshold = output_cfg$threshold,
+    pairwise = FALSE,
+    has_ci = FALSE
+  )) {
+    trip <- ccc_threshold_triplets_cpp(
+      mat,
+      threshold = output_cfg$threshold,
+      diag = output_cfg$diag
+    )
+    return(.mc_finalize_triplets_output(
+      triplets = trip,
+      output = output_cfg$output,
+      estimator_class = "ccc",
+      method = "Lin's concordance",
+      description = "Pairwise Lin's concordance correlation matrix",
+      threshold = output_cfg$threshold,
+      diag = output_cfg$diag,
+      source_dim = as.integer(c(ncol(mat), ncol(mat))),
+      source_dimnames = dn,
+      diagnostics = diag_payload,
+      symmetric = TRUE
+    ))
+  }
 
   if (ci) {
     if (nrow(mat) <= 2L) {
@@ -123,28 +201,60 @@ ccc <- function(data, ci = FALSE, conf_level = 0.95, verbose = FALSE) {
     diag(ccc_lin$est)    <- 1
     diag(ccc_lin$lwr.ci) <- 1
     diag(ccc_lin$upr.ci) <- 1
-    ccc_lin$est    <- `dimnames<-`(ccc_lin$est,
-                                   list(colnames_data, colnames_data))
-    ccc_lin$lwr.ci <- `dimnames<-`(ccc_lin$lwr.ci,
-                                   list(colnames_data, colnames_data))
-    ccc_lin$upr.ci <- `dimnames<-`(ccc_lin$upr.ci,
-                                   list(colnames_data, colnames_data))
+    ccc_lin$est <- .mc_set_matrix_dimnames(ccc_lin$est, colnames_data)
+    ccc_lin$lwr.ci <- .mc_set_matrix_dimnames(ccc_lin$lwr.ci, colnames_data)
+    ccc_lin$upr.ci <- .mc_set_matrix_dimnames(ccc_lin$upr.ci, colnames_data)
 
-    ccc_lin <- structure(ccc_lin, class = c("ccc", "ccc_ci"))   # list with CIs
-    attr(ccc_lin, "method") <- "Lin's concordance"
-    attr(ccc_lin, "description") <-
-      "Pairwise Lin's concordance with confidence intervals"
-    attr(ccc_lin, "package") <- "matrixCorr"
-    attr(ccc_lin, "conf.level") <- conf_level
+    ccc_lin <- structure(
+      ccc_lin,
+      class = c("ccc", "ccc_ci"),
+      method = "Lin's concordance",
+      description = "Pairwise Lin's concordance with confidence intervals",
+      package = "matrixCorr",
+      conf.level = conf_level,
+      diagnostics = diag_payload
+    )
+    if (!identical(output_cfg$output, "matrix")) {
+      ci_attr <- list(
+        est = .mc_set_matrix_dimnames(unclass(ccc_lin$est), colnames_data),
+        lwr.ci = .mc_set_matrix_dimnames(unclass(ccc_lin$lwr.ci), colnames_data),
+        upr.ci = .mc_set_matrix_dimnames(unclass(ccc_lin$upr.ci), colnames_data),
+        conf.level = conf_level
+      )
+      dense_obj <- .mc_structure_corr_matrix(
+        ccc_lin$est,
+        class_name = "ccc",
+        method = "Lin's concordance",
+        description = "Pairwise Lin's concordance with confidence intervals",
+        diagnostics = diag_payload,
+        dimnames = dn,
+        classes = c("ccc", "matrix"),
+        extra_attrs = list(ci = ci_attr, conf.level = conf_level)
+      )
+      return(.mc_finalize_corr_output(
+        dense_obj,
+        output = output_cfg$output,
+        threshold = output_cfg$threshold,
+        diag = output_cfg$diag
+      ))
+    }
   } else {
     est <- ccc_cpp(mat)
-    ccc_lin <- `dimnames<-`(est, list(colnames_data, colnames_data))
-
-    ccc_lin <- structure(ccc_lin, class = c("ccc", "matrix"))   # matrix printing still available
-    attr(ccc_lin, "method") <- "Lin's concordance"
-    attr(ccc_lin, "description") <- "Pairwise Lin's concordance correlation matrix"
-    attr(ccc_lin, "package") <- "matrixCorr"
-    attr(ccc_lin, "conf.level")  <- conf_level
+    ccc_lin <- .mc_structure_corr_matrix(
+      est,
+      class_name = "ccc",
+      method = "Lin's concordance",
+      description = "Pairwise Lin's concordance correlation matrix",
+      diagnostics = diag_payload,
+      dimnames = dn,
+      classes = c("ccc", "matrix")
+    )
+    ccc_lin <- .mc_finalize_corr_output(
+      ccc_lin,
+      output = output_cfg$output,
+      threshold = output_cfg$threshold,
+      diag = output_cfg$diag
+    )
   }
 
   ccc_lin
@@ -223,8 +333,8 @@ print.ccc <- function(x,
 #' @param show_ci One of \code{"yes"} or \code{"no"}.
 #' @param ... Ignored.
 #' @return For \code{summary.ccc}, a data frame with columns
-#'   \code{method1}, \code{method2}, \code{estimate} and (optionally)
-#'   \code{lwr}, \code{upr}.
+#'   \code{item1}, \code{item2}, \code{estimate}, and (optionally)
+#'   \code{lwr}, \code{upr}, plus \code{n_complete} when available.
 #' @export
 summary.ccc <- function(object,
                         digits = 4,
@@ -269,6 +379,7 @@ summary.ccc <- function(object,
   # decide whether to include CI columns
   has_any_ci <- any(is.finite(lwr) | is.finite(upr))
   include_ci <- identical(show_ci, "yes") && has_any_ci
+  diag_attr <- attr(object, "diagnostics", exact = TRUE)
 
   # 1x1 case
   if (nrow(est) == 1L && ncol(est) == 1L) {
@@ -279,6 +390,9 @@ summary.ccc <- function(object,
       stringsAsFactors = FALSE,
       check.names = FALSE
     )
+    if (is.list(diag_attr) && is.matrix(diag_attr$n_complete)) {
+      df$n_complete <- as.integer(diag_attr$n_complete[1, 1])
+    }
     if (include_ci) {
       df$lwr <- if (is.na(lwr[1,1])) NA_real_ else round(lwr[1,1], ci_digits)
       df$upr <- if (is.na(upr[1,1])) NA_real_ else round(upr[1,1], ci_digits)
@@ -294,6 +408,9 @@ summary.ccc <- function(object,
           method2  = cn[j],
           estimate = round(est[i, j], digits)
         )
+        if (is.list(diag_attr) && is.matrix(diag_attr$n_complete)) {
+          rec$n_complete <- as.integer(diag_attr$n_complete[i, j])
+        }
         if (include_ci) {
           rec$lwr <- if (is.na(lwr[i, j])) NA_real_ else round(lwr[i, j], ci_digits)
           rec$upr <- if (is.na(upr[i, j])) NA_real_ else round(upr[i, j], ci_digits)
@@ -309,7 +426,7 @@ summary.ccc <- function(object,
   }
 
   # carry attrs for printing
-  df <- structure(df, class = c("summary.ccc", "data.frame"))
+  df <- .mc_finalize_summary_df(df, class_name = "summary.ccc")
   attr(df, "overview") <- .mc_summary_corr_matrix(est, topn = topn)
   attr(df, "conf.level") <- if (is.finite(conf_level)) conf_level else NA_real_
   attr(df, "has_ci")     <- isTRUE(include_ci)
@@ -428,3 +545,4 @@ plot.ccc <- function(x,
 
   p
 }
+

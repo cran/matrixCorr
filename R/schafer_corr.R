@@ -1,17 +1,39 @@
-#' @title Schafer-Strimmer shrinkage correlation
+#' @title Shrinkage Correlation
 #'
 #' @description
-#' Computes a Schafer-Strimmer shrinkage correlation matrix for numeric data
-#' using a high-performance 'C++' backend. This stabilises Pearson correlation
+#' Computes a shrinkage correlation matrix for numeric data using a
+#' high-performance 'C++' backend. The current implementation uses the
+#' Schafer-Strimmer shrinkage estimator to stabilise Pearson correlation
 #' estimates by shrinking off-diagonal entries towards zero.
 #'
 #' @param data A numeric matrix or a data frame with at least two numeric
 #' columns. All non-numeric columns will be excluded. Columns must be numeric
 #' and contain no \code{NA}s.
+#' @param n_threads Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
+#'   \code{getOption("matrixCorr.threads", 1L)}.
+#' @param output Output representation for the computed estimates.
+#'   \itemize{
+#'   \item \code{"matrix"} (default): full dense matrix; best when you need
+#'   matrix algebra, dense heatmaps, or full compatibility with existing code.
+#'   \item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+#'   retained entries; best when many values are dropped by thresholding.
+#'   \item \code{"edge_list"}: long-form data frame with columns
+#'   \code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+#'   and network-style workflows.
+#'   }
+#' @param threshold Non-negative absolute-value filter for non-matrix outputs:
+#'   keep entries with \code{abs(value) >= threshold}. Use
+#'   \code{threshold > 0} when you want only stronger associations (typically
+#'   with \code{output = "sparse"} or \code{"edge_list"}). Keep
+#'   \code{threshold = 0} to retain all values. Must be \code{0} when
+#'   \code{output = "matrix"}.
+#' @param diag Logical; whether to include diagonal entries in
+#'   \code{"sparse"} and \code{"edge_list"} outputs.
 #'
-#' @return A symmetric numeric matrix of class \code{schafer_corr} where entry
-#' \code{(i, j)} is the shrunk correlation between the \code{i}-th and
-#' \code{j}-th numeric columns. Attributes:
+#' @return A symmetric numeric matrix of class \code{shrinkage_corr} (with
+#' compatibility class \code{schafer_corr}) where entry \code{(i, j)} is the
+#' shrunk correlation between the \code{i}-th and \code{j}-th numeric columns.
+#' Attributes:
 #' \itemize{
 #'   \item \code{method} = \code{"schafer_shrinkage"}
 #'   \item \code{description} = \code{"Schafer-Strimmer shrinkage correlation
@@ -49,7 +71,7 @@
 #' X <- MASS::mvrnorm(n, mu = rep(0, p), Sigma = Sigma)
 #' colnames(X) <- paste0("V", seq_len(p))
 #'
-#' Rshr <- schafer_corr(X)
+#' Rshr <- shrinkage_corr(X)
 #' print(Rshr, digits = 2, n = 6, max_vars = 6)
 #' summary(Rshr)
 #' plot(Rshr)
@@ -67,32 +89,76 @@
 #'   view_corr_shiny(Rshr)
 #' }
 #'
-#' @seealso \code{\link{print.schafer_corr}}, \code{\link{plot.schafer_corr}},
-#'   \code{\link{pearson_corr}}
+#' @seealso \code{\link{print.shrinkage_corr}},
+#'   \code{\link{plot.shrinkage_corr}}, \code{\link{pearson_corr}}
 #' @author Thiago de Paula Oliveira
 #' @export
-schafer_corr <- function(data) {
+shrinkage_corr <- function(data,
+                           n_threads = getOption("matrixCorr.threads", 1L),
+                           output = c("matrix", "sparse", "edge_list"),
+                           threshold = 0,
+                           diag = TRUE) {
+  output_cfg <- .mc_validate_output_args(
+    output = output,
+    threshold = threshold,
+    diag = diag
+  )
   numeric_data <- validate_corr_input(data)
   colnames_data <- colnames(numeric_data)
 
+  prev_threads <- .mc_prepare_omp_threads(
+    n_threads,
+    n_threads_missing = missing(n_threads)
+  )
+  if (!is.null(prev_threads)) {
+    on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+  }
+
   # call the C++ backend
   result <- sss_cor_cpp(numeric_data)
+  if (!is.null(colnames_data)) {
+    dimnames(result) <- .mc_square_dimnames(colnames_data)
+  }
 
-  # dimnames and metadata
-  colnames(result) <- rownames(result) <- colnames_data
-  .mc_structure_corr_matrix(
+  out <- .mc_structure_corr_matrix(
     result,
-    class_name = "schafer_corr",
+    class_name = "shrinkage_corr",
     method = "schafer_shrinkage",
-    description = "Schafer-Strimmer shrinkage correlation matrix"
+    description = "Schafer-Strimmer shrinkage correlation matrix",
+    classes = c("shrinkage_corr", "schafer_corr", "matrix")
+  )
+  .mc_finalize_corr_output(
+    out,
+    output = output_cfg$output,
+    threshold = output_cfg$threshold,
+    diag = output_cfg$diag
   )
 }
 
-#' @rdname schafer_corr
-#' @method print schafer_corr
-#' @title Print Method for \code{schafer_corr} Objects
+#' Compatibility alias for \code{shrinkage_corr()}.
 #'
-#' @param x An object of class \code{schafer_corr}.
+#' @rdname shrinkage_corr
+#' @export
+schafer_corr <- function(data,
+                         n_threads = getOption("matrixCorr.threads", 1L),
+                         output = c("matrix", "sparse", "edge_list"),
+                         threshold = 0,
+                         diag = TRUE) {
+  shrinkage_corr(
+    data,
+    n_threads = n_threads,
+    output = output,
+    threshold = threshold,
+    diag = diag
+  )
+}
+
+#' @rdname shrinkage_corr
+#' @method print shrinkage_corr
+#' @title Print Method for \code{shrinkage_corr} Objects
+#'
+#' @param x An object of class \code{shrinkage_corr} or
+#'   \code{schafer_corr}.
 #' @param digits Integer; number of decimal places to print.
 #' @param n Optional row threshold for compact preview output.
 #' @param topn Optional number of leading/trailing rows to show when truncated.
@@ -104,9 +170,9 @@ schafer_corr <- function(data) {
 #'
 #' @return Invisibly returns \code{x}.
 #' @export
-print.schafer_corr <- function(x, digits = 4, n = NULL, topn = NULL,
-                               max_vars = NULL, width = NULL,
-                               show_ci = NULL, ...) {
+print.shrinkage_corr <- function(x, digits = 4, n = NULL, topn = NULL,
+                                 max_vars = NULL, width = NULL,
+                                 show_ci = NULL, ...) {
   .mc_print_corr_matrix(
     x,
     header = "Schafer-Strimmer shrinkage correlation matrix",
@@ -120,11 +186,17 @@ print.schafer_corr <- function(x, digits = 4, n = NULL, topn = NULL,
   )
 }
 
-#' @rdname schafer_corr
-#' @method plot schafer_corr
-#' @title Plot Method for \code{schafer_corr} Objects
+#' @rdname shrinkage_corr
+#' @method print schafer_corr
+#' @export
+print.schafer_corr <- print.shrinkage_corr
+
+#' @rdname shrinkage_corr
+#' @method plot shrinkage_corr
+#' @title Plot Method for \code{shrinkage_corr} Objects
 #'
-#' @param x An object of class \code{schafer_corr}.
+#' @param x An object of class \code{shrinkage_corr} or
+#'   \code{schafer_corr}.
 #' @param title Plot title.
 #' @param cluster Logical; if TRUE, reorder rows/cols by hierarchical clustering
 #'        on distance \eqn{1 - r}.
@@ -143,7 +215,7 @@ print.schafer_corr <- function(x, digits = 4, n = NULL, topn = NULL,
 #' @return A \code{ggplot} object.
 #' @import ggplot2
 #' @export
-plot.schafer_corr <- function(
+plot.shrinkage_corr <- function(
     x,
     title = "Schafer-Strimmer shrinkage correlation",
     cluster = TRUE,
@@ -156,7 +228,7 @@ plot.schafer_corr <- function(
     palette = c("diverging", "viridis"),
     ...
 ) {
-  check_inherits(x, "schafer_corr")
+  check_inherits(x, c("shrinkage_corr", "schafer_corr"))
   if (!is.null(show_values)) {
     show_value <- show_values
   }
@@ -235,12 +307,24 @@ plot.schafer_corr <- function(
   p_
 }
 
-#' @rdname schafer_corr
-#' @method summary schafer_corr
-#' @param object An object of class \code{schafer_corr}.
+#' @rdname shrinkage_corr
+#' @method plot schafer_corr
 #' @export
-summary.schafer_corr <- function(object, n = NULL, topn = NULL,
-                                 max_vars = NULL, width = NULL,
-                                 show_ci = NULL, ...) {
+plot.schafer_corr <- plot.shrinkage_corr
+
+#' @rdname shrinkage_corr
+#' @method summary shrinkage_corr
+#' @param object An object of class \code{shrinkage_corr} or
+#'   \code{schafer_corr}.
+#' @export
+summary.shrinkage_corr <- function(object, n = NULL, topn = NULL,
+                                   max_vars = NULL, width = NULL,
+                                   show_ci = NULL, ...) {
   .mc_summary_corr_matrix(object, topn = topn)
 }
+
+#' @rdname shrinkage_corr
+#' @method summary schafer_corr
+#' @export
+summary.schafer_corr <- summary.shrinkage_corr
+

@@ -13,6 +13,10 @@ bicor_matrix_pairwise_cpp <- function(X, c_const = 9.0, maxPOutliers = 1.0, pear
     .Call(`_matrixCorr_bicor_matrix_pairwise_cpp`, X, c_const, maxPOutliers, pearson_fallback, min_n, n_threads)
 }
 
+bicor_threshold_triplets_cpp <- function(X, c_const = 9.0, maxPOutliers = 1.0, pearson_fallback = 1L, threshold = 0.0, diag = TRUE, block_size = 256L, n_threads = 1L) {
+    .Call(`_matrixCorr_bicor_threshold_triplets_cpp`, X, c_const, maxPOutliers, pearson_fallback, threshold, diag, block_size, n_threads)
+}
+
 bicor_matrix_weighted_cpp <- function(X, w, c_const = 9.0, maxPOutliers = 1.0, pearson_fallback = 1L, n_threads = 1L) {
     .Call(`_matrixCorr_bicor_matrix_weighted_cpp`, X, w, c_const, maxPOutliers, pearson_fallback, n_threads)
 }
@@ -21,8 +25,8 @@ bicor_matrix_weighted_pairwise_cpp <- function(X, w, c_const = 9.0, maxPOutliers
     .Call(`_matrixCorr_bicor_matrix_weighted_pairwise_cpp`, X, w, c_const, maxPOutliers, pearson_fallback, min_n, n_threads)
 }
 
-bland_altman_cpp <- function(group1, group2, loa_multiplier = 1.96, mode = 1L, conf_level = 0.95) {
-    .Call(`_matrixCorr_bland_altman_cpp`, group1, group2, loa_multiplier, mode, conf_level)
+bland_altman_cpp <- function(group1, group2, loa_multiplier = 1.96, mode = 1L, conf_level = 0.95, n_threads = 1L) {
+    .Call(`_matrixCorr_bland_altman_cpp`, group1, group2, loa_multiplier, mode, conf_level, n_threads)
 }
 
 ba_openmp_threads <- function() {
@@ -37,8 +41,8 @@ ba_rm_complete_pairs_cpp <- function(y, subject, method, time) {
     .Call(`_matrixCorr_ba_rm_complete_pairs_cpp`, y, subject, method, time)
 }
 
-bland_altman_repeated_em_ext_cpp <- function(y, subject, method, time, include_slope = FALSE, use_ar1 = FALSE, ar1_rho = NA_real_, max_iter = 200L, tol = 1e-6, conf_level = 0.95, loa_multiplier_arg = NA_real_, use_cov_su_se = TRUE) {
-    .Call(`_matrixCorr_bland_altman_repeated_em_ext_cpp`, y, subject, method, time, include_slope, use_ar1, ar1_rho, max_iter, tol, conf_level, loa_multiplier_arg, use_cov_su_se)
+bland_altman_repeated_em_ext_cpp <- function(y, subject, method, time, include_slope = FALSE, use_ar1 = FALSE, ar1_rho = NA_real_, max_iter = 200L, tol = 1e-6, conf_level = 0.95, loa_multiplier_arg = NA_real_, use_cov_su_se = TRUE, n_threads = 1L) {
+    .Call(`_matrixCorr_bland_altman_repeated_em_ext_cpp`, y, subject, method, time, include_slope, use_ar1, ar1_rho, max_iter, tol, conf_level, loa_multiplier_arg, use_cov_su_se, n_threads)
 }
 
 cccUst_rcpp <- function(y_vec, met_vec, time_vec, subj_vec, nmet0, nmet1, ntime, ns, Dmat, delta, cl) {
@@ -61,8 +65,8 @@ build_L_Dm_Z_cpp <- function(colnames_X, rmet_name, rtime_name, method_levels, t
     .Call(`_matrixCorr_build_L_Dm_Z_cpp`, colnames_X, rmet_name, rtime_name, method_levels, time_levels, has_interaction, Dmat_global, slope_mode, slope_var, method_codes, drop_zero_cols)
 }
 
-ccc_vc_cpp <- function(Xr, yr, subject, method, time, nm, nt, max_iter = 200L, tol = 1e-6, conf_level = 0.95, ci_mode = 2L, Lr = NULL, auxDr = NULL, Zr = NULL, use_ar1 = FALSE, ar1_rho = 0.0, include_subj_method = TRUE, include_subj_time = TRUE, sb_zero_tol = 1e-10, eval_single_visit = FALSE, time_weights = NULL) {
-    .Call(`_matrixCorr_ccc_vc_cpp`, Xr, yr, subject, method, time, nm, nt, max_iter, tol, conf_level, ci_mode, Lr, auxDr, Zr, use_ar1, ar1_rho, include_subj_method, include_subj_time, sb_zero_tol, eval_single_visit, time_weights)
+ccc_vc_cpp <- function(Xr, yr, subject, method, time, nm, nt, max_iter = 200L, tol = 1e-6, conf_level = 0.95, ci_mode = 2L, Lr = NULL, auxDr = NULL, Zr = NULL, use_ar1 = FALSE, ar1_rho = 0.0, include_subj_method = TRUE, include_subj_time = TRUE, sb_zero_tol = 1e-10, eval_single_visit = FALSE, time_weights = NULL, metric_mode = 0L) {
+    .Call(`_matrixCorr_ccc_vc_cpp`, Xr, yr, subject, method, time, nm, nt, max_iter, tol, conf_level, ci_mode, Lr, auxDr, Zr, use_ar1, ar1_rho, include_subj_method, include_subj_time, sb_zero_tol, eval_single_visit, time_weights, metric_mode)
 }
 
 ccc_cpp <- function(X) {
@@ -77,12 +81,28 @@ openmp_threads <- function() {
     .Call(`_matrixCorr_openmp_threads`)
 }
 
+ccc_threshold_triplets_cpp <- function(X, threshold = 0.0, diag = TRUE, block_size = 256L) {
+    .Call(`_matrixCorr_ccc_threshold_triplets_cpp`, X, threshold, diag, block_size)
+}
+
 ustat_dcor <- function(x, y) {
     .Call(`_matrixCorr_ustat_dcor`, x, y)
 }
 
 ustat_dcor_matrix_cpp <- function(X) {
     .Call(`_matrixCorr_ustat_dcor_matrix_cpp`, X)
+}
+
+ustat_dcor_matrix_pairwise_cpp <- function(X, return_inference = FALSE) {
+    .Call(`_matrixCorr_ustat_dcor_matrix_pairwise_cpp`, X, return_inference)
+}
+
+icc_matrix_cpp <- function(X, form_code = 0L, average_unit = FALSE, pairwise_complete = FALSE, return_ci = FALSE, conf_level = 0.95, n_threads = 1L) {
+    .Call(`_matrixCorr_icc_matrix_cpp`, X, form_code, average_unit, pairwise_complete, return_ci, conf_level, n_threads)
+}
+
+icc_overall_cpp <- function(X, return_ci = FALSE, conf_level = 0.95) {
+    .Call(`_matrixCorr_icc_overall_cpp`, X, return_ci, conf_level)
 }
 
 kendall_matrix_cpp <- function(mat) {
@@ -109,6 +129,10 @@ pearson_matrix_cpp <- function(X_) {
     .Call(`_matrixCorr_pearson_matrix_cpp`, X_)
 }
 
+pearson_threshold_triplets_cpp <- function(X_, threshold = 0.0, diag = TRUE, block_size = 256L) {
+    .Call(`_matrixCorr_pearson_threshold_triplets_cpp`, X_, threshold, diag, block_size)
+}
+
 pearson_matrix_pairwise_cpp <- function(X_, return_ci = FALSE, conf_level = 0.95) {
     .Call(`_matrixCorr_pearson_matrix_pairwise_cpp`, X_, return_ci, conf_level)
 }
@@ -125,12 +149,20 @@ pbcor_matrix_cpp <- function(X, beta = 0.2, n_threads = 1L) {
     .Call(`_matrixCorr_pbcor_matrix_cpp`, X, beta, n_threads)
 }
 
+pbcor_threshold_triplets_cpp <- function(X, beta = 0.2, threshold = 0.0, diag = TRUE, block_size = 256L, n_threads = 1L) {
+    .Call(`_matrixCorr_pbcor_threshold_triplets_cpp`, X, beta, threshold, diag, block_size, n_threads)
+}
+
 pbcor_matrix_pairwise_cpp <- function(X, beta = 0.2, min_n = 5L, n_threads = 1L) {
     .Call(`_matrixCorr_pbcor_matrix_pairwise_cpp`, X, beta, min_n, n_threads)
 }
 
 wincor_matrix_cpp <- function(X, tr = 0.2, n_threads = 1L) {
     .Call(`_matrixCorr_wincor_matrix_cpp`, X, tr, n_threads)
+}
+
+wincor_threshold_triplets_cpp <- function(X, tr = 0.2, threshold = 0.0, diag = TRUE, block_size = 256L, n_threads = 1L) {
+    .Call(`_matrixCorr_wincor_threshold_triplets_cpp`, X, tr, threshold, diag, block_size, n_threads)
 }
 
 wincor_matrix_pairwise_cpp <- function(X, tr = 0.2, min_n = 5L, n_threads = 1L) {
@@ -151,6 +183,10 @@ spearman_matrix_cpp <- function(X_) {
 
 spearman_matrix_pairwise_cpp <- function(X_, return_ci = FALSE, conf_level = 0.95) {
     .Call(`_matrixCorr_spearman_matrix_pairwise_cpp`, X_, return_ci, conf_level)
+}
+
+spearman_threshold_triplets_cpp <- function(X_, threshold = 0.0, diag = TRUE, block_size = 256L) {
+    .Call(`_matrixCorr_spearman_threshold_triplets_cpp`, X_, threshold, diag, block_size)
 }
 
 matrixCorr_tetrachoric_mle_cpp <- function(tab, correct = 0.5) {
@@ -187,6 +223,18 @@ matrixCorr_polyserial_mle_cpp <- function(x, y) {
 
 matrixCorr_polyserial_negloglik_cpp <- function(z, y, pars, maxcor = 0.9999) {
     .Call(`_matrixCorr_matrixCorr_polyserial_negloglik_cpp`, z, y, pars, maxcor)
+}
+
+matrixCorr_tetrachoric_inference_cpp <- function(tab, correct = 0.5, conf_level = 0.95) {
+    .Call(`_matrixCorr_matrixCorr_tetrachoric_inference_cpp`, tab, correct, conf_level)
+}
+
+matrixCorr_polychoric_inference_cpp <- function(tab, correct = 0.5, conf_level = 0.95) {
+    .Call(`_matrixCorr_matrixCorr_polychoric_inference_cpp`, tab, correct, conf_level)
+}
+
+matrixCorr_polyserial_inference_cpp <- function(x, y, conf_level = 0.95) {
+    .Call(`_matrixCorr_matrixCorr_polyserial_inference_cpp`, x, y, conf_level)
 }
 
 matrixCorr_polydi_mle_cpp <- function(tab, correct = 0.5) {

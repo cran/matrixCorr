@@ -65,6 +65,24 @@
 #' @param seed Optional positive integer used to seed the bootstrap resampling
 #'   when \code{ci = TRUE} or \code{p_value = TRUE}. If \code{NULL}, a fresh
 #'   internal seed is generated.
+#' @param output Output representation for the computed estimates.
+#'   \itemize{
+#'   \item \code{"matrix"} (default): full dense matrix; best when you need
+#'   matrix algebra, dense heatmaps, or full compatibility with existing code.
+#'   \item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+#'   retained entries; best when many values are dropped by thresholding.
+#'   \item \code{"edge_list"}: long-form data frame with columns
+#'   \code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+#'   and network-style workflows.
+#'   }
+#' @param threshold Non-negative absolute-value filter for non-matrix outputs:
+#'   keep entries with \code{abs(value) >= threshold}. Use
+#'   \code{threshold > 0} when you want only stronger associations (typically
+#'   with \code{output = "sparse"} or \code{"edge_list"}). Keep
+#'   \code{threshold = 0} to retain all values. Must be \code{0} when
+#'   \code{output = "matrix"}.
+#' @param diag Logical; whether to include diagonal entries in
+#'   \code{"sparse"} and \code{"edge_list"} outputs.
 #' @param x An object of class \code{skipped_corr}.
 #' @param var1,var2 Optional column names or 1-based column indices used by
 #'   [skipped_corr_masks()] to extract the skipped-row indices for one pair.
@@ -212,19 +230,27 @@
 skipped_corr <- function(data,
                     method = c("pearson", "spearman"),
                     na_method = c("error", "pairwise"),
-                    stand = TRUE,
-                    outlier_rule = c("idealf", "mad"),
-                    cutoff = sqrt(stats::qchisq(0.975, df = 2)),
-                    n_threads = getOption("matrixCorr.threads", 1L),
-                    return_masks = FALSE,
                     ci = FALSE,
                     p_value = FALSE,
                     conf_level = 0.95,
+                    n_threads = getOption("matrixCorr.threads", 1L),
+                    return_masks = FALSE,
+                    stand = TRUE,
+                    outlier_rule = c("idealf", "mad"),
+                    cutoff = sqrt(stats::qchisq(0.975, df = 2)),
                     n_boot = 2000L,
                     p_adjust = c("none", "hochberg", "ecp"),
                     fwe_level = 0.05,
                     n_mc = 1000L,
-                    seed = NULL) {
+                    seed = NULL,
+                    output = c("matrix", "sparse", "edge_list"),
+                    threshold = 0,
+                    diag = TRUE) {
+  output_cfg <- .mc_validate_output_args(
+    output = output,
+    threshold = threshold,
+    diag = diag
+  )
   method <- match.arg(method)
   na_method <- match.arg(na_method)
   outlier_rule <- match.arg(outlier_rule)
@@ -267,6 +293,8 @@ skipped_corr <- function(data,
 
   method_int <- switch(method, pearson = 0L, spearman = 1L)
   use_mad <- identical(outlier_rule, "mad")
+  prev_threads <- get_omp_threads()
+  on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
   res <- skipcor_matrix_cpp(
     numeric_data,
     method_int = method_int,
@@ -305,10 +333,9 @@ skipped_corr <- function(data,
     skipped_n = unclass(res$skipped_n),
     skipped_prop = unclass(res$skipped_prop)
   )
-  res_cor <- res$cor
-  colnames(res_cor) <- rownames(res_cor) <- colnames_data
+  res_cor <- .mc_set_matrix_dimnames(res$cor, colnames_data)
   for (nm in names(diag_payload)) {
-    dimnames(diag_payload[[nm]]) <- list(colnames_data, colnames_data)
+    diag_payload[[nm]] <- .mc_set_matrix_dimnames(diag_payload[[nm]], colnames_data)
   }
 
   infer_payload <- NULL
@@ -326,25 +353,26 @@ skipped_corr <- function(data,
     if (isTRUE(ci)) {
       lwr <- unclass(res$lwr)
       upr <- unclass(res$upr)
-      dimnames(lwr) <- dimnames(upr) <- list(colnames_data, colnames_data)
+      lwr <- .mc_set_matrix_dimnames(lwr, colnames_data)
+      upr <- .mc_set_matrix_dimnames(upr, colnames_data)
       infer_payload$lwr <- lwr
       infer_payload$upr <- upr
     }
     if (isTRUE(p_value)) {
       p_mat <- unclass(res$p_value)
-      dimnames(p_mat) <- list(colnames_data, colnames_data)
+      p_mat <- .mc_set_matrix_dimnames(p_mat, colnames_data)
       infer_payload$p_value <- p_mat
       if (identical(p_adjust, "hochberg")) {
         padj <- unclass(res$p_value_adjusted)
         reject <- unclass(res$reject) > 0.5
-        dimnames(padj) <- list(colnames_data, colnames_data)
-        dimnames(reject) <- list(colnames_data, colnames_data)
+        padj <- .mc_set_matrix_dimnames(padj, colnames_data)
+        reject <- .mc_set_matrix_dimnames(reject, colnames_data)
         infer_payload$p_value_adjusted <- padj
         infer_payload$reject <- reject
         infer_payload$p_adjust <- "hochberg"
       } else if (identical(p_adjust, "ecp")) {
         reject <- unclass(res$reject) > 0.5
-        dimnames(reject) <- list(colnames_data, colnames_data)
+        reject <- .mc_set_matrix_dimnames(reject, colnames_data)
         infer_payload$reject <- reject
         infer_payload$critical_p_value <- unname(res$critical_p_value)
         infer_payload$p_adjust <- "ecp"
@@ -354,21 +382,9 @@ skipped_corr <- function(data,
     }
   }
 
-  out <- .mc_structure_corr_matrix(
-    res_cor,
-    class_name = "skipped_corr",
-    method = "skipped_correlation",
-    description = paste0(
-      "Skipped correlation; base = ", method,
-      "; rule = ", outlier_rule,
-      "; standardise = ", stand,
-      "; NA mode = ", na_method, "."
-    ),
-    diagnostics = diag_payload
-  )
-  if (isTRUE(return_masks)) attr(out, "skipped_masks") <- mask_payload
+  ci_attr <- NULL
+  inference_attr <- NULL
   if (!is.null(infer_payload)) {
-    ci_attr <- NULL
     if (isTRUE(ci)) {
       ci_attr <- list(
         est = unclass(res_cor),
@@ -376,7 +392,6 @@ skipped_corr <- function(data,
         upr.ci = infer_payload$upr,
         conf.level = infer_payload$conf_level
       )
-      attr(out, "ci") <- ci_attr
     }
 
     inference_attr <- list(
@@ -402,9 +417,31 @@ skipped_corr <- function(data,
       }
     }
     if (identical(p_adjust, "ecp")) inference_attr$n_mc <- n_mc
-    attr(out, "inference") <- inference_attr
   }
-  out
+
+  out <- .mc_structure_corr_matrix(
+    res_cor,
+    class_name = "skipped_corr",
+    method = "skipped_correlation",
+    description = paste0(
+      "Skipped correlation; base = ", method,
+      "; rule = ", outlier_rule,
+      "; standardise = ", stand,
+      "; NA mode = ", na_method, "."
+    ),
+    diagnostics = diag_payload,
+    extra_attrs = c(
+      if (isTRUE(return_masks)) list(skipped_masks = mask_payload),
+      if (!is.null(ci_attr)) list(ci = ci_attr),
+      if (!is.null(inference_attr)) list(inference = inference_attr)
+    )
+  )
+  .mc_finalize_corr_output(
+    out,
+    output = output_cfg$output,
+    threshold = output_cfg$threshold,
+    diag = output_cfg$diag
+  )
 }
 
 .mc_skipcor_ci_attr <- function(x) {
@@ -732,7 +769,7 @@ plot.skipped_corr <- function(x,
   for (nm in int_cols) df[[nm]] <- as.integer(df[[nm]])
 
   base <- .mc_summary_corr_matrix(object)
-  out <- structure(df, class = c("summary.skipped_corr", "data.frame"))
+  out <- .mc_finalize_summary_df(df, class_name = "summary.skipped_corr")
   attr(out, "overview") <- base
   attr(out, "has_ci") <- include_ci
   attr(out, "has_p") <- include_p
@@ -805,3 +842,4 @@ print.summary.skipped_corr <- function(x, digits = NULL, n = NULL,
   )
   invisible(x)
 }
+

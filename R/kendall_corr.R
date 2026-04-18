@@ -13,9 +13,10 @@
 #' when \code{data} is a vector. If supplied, the function computes the
 #' Kendall correlation \emph{between \code{data} and \code{y}} using a
 #' low-overhead scalar path and returns a single number.
-#' @param check_na Logical (default \code{TRUE}). If \code{TRUE}, inputs must
-#' be free of missing/undefined values. Use \code{FALSE} only when missingness
-#' has already been handled upstream.
+#' @param na_method Character scalar controlling missing-data handling.
+#'   \code{"error"} rejects missing, \code{NaN}, and infinite values.
+#'   \code{"pairwise"} recomputes each correlation on its own pairwise
+#'   complete-case overlap.
 #' @param ci Logical (default \code{FALSE}). If \code{TRUE}, attach pairwise
 #' confidence intervals for the off-diagonal Kendall correlations in
 #' matrix/data-frame mode.
@@ -24,6 +25,26 @@
 #' @param ci_method Confidence-interval engine used when \code{ci = TRUE}.
 #' Supported Kendall methods are \code{"fieller"} (default),
 #' \code{"brown_benedetti"}, and \code{"if_el"}.
+#' @param n_threads Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
+#'   \code{getOption("matrixCorr.threads", 1L)}.
+#' @param output Output representation for the computed estimates.
+#'   \itemize{
+#'   \item \code{"matrix"} (default): full dense matrix; best when you need
+#'   matrix algebra, dense heatmaps, or full compatibility with existing code.
+#'   \item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+#'   retained entries; best when many values are dropped by thresholding.
+#'   \item \code{"edge_list"}: long-form data frame with columns
+#'   \code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+#'   and network-style workflows.
+#'   }
+#' @param threshold Non-negative absolute-value filter for non-matrix outputs:
+#'   keep entries with \code{abs(value) >= threshold}. Use
+#'   \code{threshold > 0} when you want only stronger associations (typically
+#'   with \code{output = "sparse"} or \code{"edge_list"}). Keep
+#'   \code{threshold = 0} to retain all values. Must be \code{0} when
+#'   \code{output = "matrix"}.
+#' @param diag Logical; whether to include diagonal entries in
+#'   \code{"sparse"} and \code{"edge_list"} outputs.
 #'
 #' @return
 #' \itemize{
@@ -57,10 +78,10 @@
 #' denominator is zero and the correlation is undefined (returned as \code{NA}
 #' off the diagonal).
 #'
-#' When \code{check_na = FALSE}, each \eqn{(i,j)} estimate is recomputed on the
-#' pairwise complete-case overlap of columns \eqn{i} and \eqn{j}. Confidence
-#' intervals use the observed pairwise-complete Kendall estimate and the same
-#' pairwise complete-case overlap.
+#' When \code{na_method = "pairwise"}, each \eqn{(i,j)} estimate is recomputed
+#' on the pairwise complete-case overlap of columns \eqn{i} and \eqn{j}.
+#' Confidence intervals use the observed pairwise-complete Kendall estimate and
+#' the same pairwise complete-case overlap.
 #'
 #' With \code{ci_method = "fieller"}, the interval is built on the Fisher-style
 #' transformed scale \eqn{z = \operatorname{atanh}(\hat\tau)} using Fieller's
@@ -95,9 +116,9 @@
 #'   calculations and \code{"if_el"} adds extra per-pair likelihood solving.
 #' }
 #'
-#' @note Missing values are not allowed when \code{check_na = TRUE}. Columns
-#' with fewer than two observations are excluded. Confidence intervals are not
-#' available in the two-vector interface.
+#' @note Missing values are rejected when \code{na_method = "error"}. Columns
+#' with fewer than two usable observations are excluded. Confidence intervals
+#' are not available in the two-vector interface.
 #'
 #' @references
 #' Kendall, M. G. (1938). A New Measure of Rank Correlation. \emph{Biometrika},
@@ -156,16 +177,74 @@
 #' @seealso \code{\link{print.kendall_matrix}}, \code{\link{plot.kendall_matrix}}
 #' @author Thiago de Paula Oliveira
 #' @export
-kendall_tau <- function(data, y = NULL, check_na = TRUE, ci = FALSE,
+kendall_tau <- function(data,
+                        y = NULL,
+                        na_method = c("error", "pairwise"),
+                        ci = FALSE,
                         conf_level = 0.95,
-                        ci_method = c("fieller", "if_el", "brown_benedetti")) {
-  check_bool(ci, arg = "ci")
+                        ci_method = c("fieller", "if_el", "brown_benedetti"),
+                        n_threads = getOption("matrixCorr.threads", 1L),
+                        output = c("matrix", "sparse", "edge_list"),
+                        threshold = 0,
+                        diag = TRUE,
+                        ...) {
+  output_cfg <- .mc_validate_output_args(
+    output = output,
+    threshold = threshold,
+    diag = diag
+  )
+  if (is.null(y) && ...length() == 0L && missing(na_method) && isFALSE(ci)) {
+    numeric_data <- validate_corr_input(data, check_na = TRUE)
+    colnames_data <- colnames(numeric_data)
+    prev_threads <- .mc_prepare_omp_threads(
+      n_threads,
+      n_threads_missing = missing(n_threads)
+    )
+    if (!is.null(prev_threads)) {
+      on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+    }
+    out <- .mc_structure_corr_matrix(
+      kendall_matrix_cpp(numeric_data),
+      class_name = "kendall_matrix",
+      method = "kendall",
+      description = "Pairwise Kendall's tau (auto tau-a/tau-b) correlation matrix",
+      dimnames = if (!is.null(colnames_data)) .mc_square_dimnames(colnames_data)
+    )
+    return(.mc_finalize_corr_output(
+      out,
+      output = output_cfg$output,
+      threshold = output_cfg$threshold,
+      diag = output_cfg$diag
+    ))
+  }
+
+  if (...length() == 0L && missing(na_method)) {
+    na_cfg <- list(na_method = "error", check_na = TRUE)
+  } else {
+    legacy_args <- .mc_extract_legacy_aliases(list(...), allowed = "check_na")
+    na_cfg <- resolve_na_args(
+      na_method = na_method,
+      check_na = legacy_args$check_na %||% NULL,
+      na_method_missing = missing(na_method)
+    )
+  }
+  if (!isFALSE(ci)) {
+    check_bool(ci, arg = "ci")
+  } else if (!is.logical(ci) || length(ci) != 1L || is.na(ci)) {
+    check_bool(ci, arg = "ci")
+  }
   ci_method <- match.arg(ci_method)
   if (isTRUE(ci)) {
     check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
   }
 
   if (!is.null(y)) {
+    if (!identical(output_cfg$output, "matrix")) {
+      abort_bad_arg(
+        "output",
+        message = "non-matrix output modes are unavailable in two-vector mode."
+      )
+    }
     if (isTRUE(ci)) {
       abort_bad_arg("ci",
         message = "Confidence intervals are not available when {.arg y} is supplied."
@@ -177,10 +256,10 @@ kendall_tau <- function(data, y = NULL, check_na = TRUE, ci = FALSE,
       )
     }
     check_same_length(data, y, arg_x = "data", arg_y = "y")
-    if (check_na && (any(!is.finite(data)) || any(!is.finite(y)))) {
+    if (na_cfg$check_na && (any(!is.finite(data)) || any(!is.finite(y)))) {
       abort_bad_arg("data",
-        message = "and {.arg y} must be free of NA/NaN/Inf when {.arg check_na} = TRUE.",
-        .hint   = "Set `check_na = FALSE` only if missingness has been handled upstream."
+        message = "and {.arg y} must be free of NA/NaN/Inf when {.arg na_method} is {.val error}.",
+        .hint   = "Set `na_method = \"pairwise\"` to use complete-case overlaps."
       )
     }
 
@@ -188,12 +267,21 @@ kendall_tau <- function(data, y = NULL, check_na = TRUE, ci = FALSE,
     return(as.numeric(tau))
   }
 
-  numeric_data <- validate_corr_input(data, check_na = check_na)
+  numeric_data <- validate_corr_input(data, check_na = na_cfg$check_na)
   colnames_data <- colnames(numeric_data)
+  dn <- .mc_square_dimnames(colnames_data)
   diagnostics <- NULL
   ci_attr <- NULL
 
-  if (isTRUE(check_na) && !isTRUE(ci)) {
+  prev_threads <- .mc_prepare_omp_threads(
+    n_threads,
+    n_threads_missing = missing(n_threads)
+  )
+  if (!is.null(prev_threads)) {
+    on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+  }
+
+  if (isTRUE(na_cfg$check_na) && !isTRUE(ci)) {
     result <- kendall_matrix_cpp(numeric_data)
   } else {
     pairwise <- kendall_matrix_pairwise_cpp(
@@ -203,36 +291,41 @@ kendall_tau <- function(data, y = NULL, check_na = TRUE, ci = FALSE,
       ci_method = ci_method
     )
     result <- pairwise$est
-    diagnostics <- list(n_complete = pairwise$n_complete)
-    dimnames(diagnostics$n_complete) <- list(colnames_data, colnames_data)
+    diagnostics <- list(
+      n_complete = .mc_set_matrix_dimnames(pairwise$n_complete, colnames_data)
+    )
     if (isTRUE(ci)) {
       ci_attr <- list(
-        est = unclass(result),
-        lwr.ci = unclass(pairwise$lwr),
-        upr.ci = unclass(pairwise$upr),
+        est = .mc_set_matrix_dimnames(unclass(result), colnames_data),
+        lwr.ci = .mc_set_matrix_dimnames(unclass(pairwise$lwr), colnames_data),
+        upr.ci = .mc_set_matrix_dimnames(unclass(pairwise$upr), colnames_data),
         conf.level = pairwise$conf_level,
         ci.method = pairwise$ci_method
       )
-      dimnames(ci_attr$est) <- list(colnames_data, colnames_data)
-      dimnames(ci_attr$lwr.ci) <- list(colnames_data, colnames_data)
-      dimnames(ci_attr$upr.ci) <- list(colnames_data, colnames_data)
     }
   }
 
-  colnames(result) <- rownames(result) <- colnames_data
   out <- .mc_structure_corr_matrix(
     result,
     class_name = "kendall_matrix",
     method = "kendall",
     description = "Pairwise Kendall's tau (auto tau-a/tau-b) correlation matrix",
-    diagnostics = diagnostics
+    diagnostics = diagnostics,
+    dimnames = dn,
+    extra_attrs = if (!is.null(ci_attr)) {
+      list(
+        ci = ci_attr,
+        conf.level = conf_level,
+        ci.method = ci_method
+      )
+    }
   )
-  if (!is.null(ci_attr)) {
-    attr(out, "ci") <- ci_attr
-    attr(out, "conf.level") <- conf_level
-    attr(out, "ci.method") <- ci_method
-  }
-  out
+  .mc_finalize_corr_output(
+    out,
+    output = output_cfg$output,
+    threshold = output_cfg$threshold,
+    diag = output_cfg$diag
+  )
 }
 
 .mc_kendall_ci_attr <- function(x) {
@@ -287,7 +380,7 @@ kendall_tau <- function(data, y = NULL, check_na = TRUE, ci = FALSE,
   if ("upr" %in% names(df)) df$upr <- as.numeric(df$upr)
   if ("n_complete" %in% names(df)) df$n_complete <- as.integer(df$n_complete)
 
-  out <- structure(df, class = c("summary.kendall_matrix", "data.frame"))
+  out <- .mc_finalize_summary_df(df, class_name = "summary.kendall_matrix")
   attr(out, "overview") <- .mc_summary_corr_matrix(object)
   attr(out, "has_ci") <- include_ci
   attr(out, "conf.level") <- if (is.null(ci)) NA_real_ else ci$conf.level
@@ -486,3 +579,4 @@ print.summary.kendall_matrix <- function(x, digits = NULL, n = NULL,
   )
   invisible(x)
 }
+

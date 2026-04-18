@@ -3,14 +3,15 @@
 #' @description
 #' Computes pairwise biweight mid-correlations for numeric data. Bicor is a
 #' robust, Pearson-like correlation that down-weights outliers and heavy-tailed
-#' observations.
+#' observations. Optional large-sample confidence intervals are available as a
+#' derived feature.
 #'
 #'
 #' @param data A numeric matrix or a data frame containing numeric columns.
 #'   Factors, logicals and common time classes are dropped in the data-frame
 #'   path. Missing values are not allowed unless \code{na_method = "pairwise"}.
 #' @param c_const Positive numeric. Tukey biweight tuning constant applied to the
-#'   \emph{raw} MAD; default \code{9} (Langfelder & Horvath’s convention).
+#'   \emph{raw} MAD; default \code{9} (Langfelder & Horvath's convention).
 #' @param max_p_outliers Numeric in \code{(0, 1]}. Optional cap on the maximum
 #'   proportion of outliers \emph{on each side}; if \code{< 1}, side-specific
 #'   rescaling maps those quantiles to \code{|u|=1}. Use \code{1} to disable.
@@ -35,14 +36,44 @@
 #' @param sparse_threshold Optional numeric \eqn{\geq 0}. If supplied, sets
 #'   entries with \code{|r| < sparse_threshold} to 0 and returns a sparse
 #'   \code{"ddiMatrix"} (requires \pkg{Matrix}).
+#' @param ci Logical (default \code{FALSE}). If \code{TRUE}, attach approximate
+#'   Fisher-z confidence intervals for the off-diagonal biweight
+#'   mid-correlations. This confidence interval is provided as an additional
+#'   large-sample approximation.
+#' @param conf_level Confidence level used when \code{ci = TRUE}. Default is
+#'   \code{0.95}.
 #' @param n_threads Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
 #'   \code{getOption("matrixCorr.threads", 1L)}.
+#' @param output Output representation for the computed estimates.
+#'   \itemize{
+#'   \item \code{"matrix"} (default): full dense matrix; best when you need
+#'   matrix algebra, dense heatmaps, or full compatibility with existing code.
+#'   \item \code{"sparse"}: sparse matrix from \pkg{Matrix} containing only
+#'   retained entries; best when many values are dropped by thresholding.
+#'   \item \code{"edge_list"}: long-form data frame with columns
+#'   \code{row}, \code{col}, \code{value}; convenient for filtering, joins,
+#'   and network-style workflows.
+#'   }
+#' @param threshold Non-negative absolute-value filter for non-matrix outputs:
+#'   keep entries with \code{abs(value) >= threshold}. Use
+#'   \code{threshold > 0} when you want only stronger associations (typically
+#'   with \code{output = "sparse"} or \code{"edge_list"}). Keep
+#'   \code{threshold = 0} to retain all values. Must be \code{0} when
+#'   \code{output = "matrix"}.
+#' @param diag Logical; whether to include diagonal entries in
+#'   \code{"sparse"} and \code{"edge_list"} outputs.
 #'
 #' @return A symmetric correlation matrix with class \code{bicor}
 #'   (or a \code{dgCMatrix} if \code{sparse_threshold} is used), with attributes:
 #'   \code{method = "biweight_mid_correlation"}, \code{description},
 #'   and \code{package = "matrixCorr"}. Downstream code should be prepared to
-#'   handle either a dense numeric matrix or a sparse \code{dgCMatrix}.
+#'   handle either a dense numeric matrix or a sparse \code{dgCMatrix}. When
+#'   \code{ci = TRUE}, the object also carries a \code{ci} attribute with
+#'   elements \code{est}, \code{lwr.ci}, \code{upr.ci}, \code{conf.level}, and
+#'   \code{ci.method}, together with an \code{inference} attribute containing
+#'   the standard large-sample summary matrices \code{estimate},
+#'   \code{statistic}, \code{p_value}, \code{Z}, and \code{n_obs}. Pairwise
+#'   complete-case counts are stored in \code{attr(x, "diagnostics")$n_complete}.
 #' Internally, all medians/MADs, Tukey weights, optional pairwise-NA handling,
 #' and OpenMP loops are implemented in the C++ helpers
 #' (\code{bicor_*_cpp()}), so the R wrapper mostly validates arguments and
@@ -86,7 +117,7 @@
 #'         \deqn{\mathrm{bicor}_{\mathrm{hyb}}(x,y) = \sum_a \bar x_a\,\tilde y_a,}
 #'         with the other column still robust-standardised.
 #'   \item \code{"all"} when all columns use ordinary Pearson standardisation; the result
-#'         equals \code{stats::cor(…, method="pearson")} when the NA policy matches.
+#'         equals \code{stats::cor(..., method="pearson")} when the NA policy matches.
 #' }
 #'
 #' \strong{Handling missing values (\code{na_method}).}
@@ -128,6 +159,26 @@
 #' \eqn{R = \tilde X^\top \tilde X}. \code{n_threads} selects the number of OpenMP
 #' threads; by default it uses \code{getOption("matrixCorr.threads", 1L)}.
 #'
+#' \strong{Large-sample inference.}
+#' For a pairwise estimate \eqn{r} computed from \eqn{n_{jk}} observed rows, the
+#' standard large-sample summaries use
+#' \deqn{
+#' Z_{jk} = \frac{1}{2}\log\!\left(\frac{1 + r}{1 - r}\right)\sqrt{n_{jk} - 2}
+#' }
+#' and
+#' \deqn{
+#' T_{jk} = \sqrt{n_{jk} - 2}\;\frac{|r|}{\sqrt{1-r^2}}.
+#' }
+#' The reported p-value is the two-sided Student-\eqn{t} tail probability with
+#' \eqn{n_{jk}-2} degrees of freedom. When \code{ci = TRUE}, the package also
+#' reports an approximate Fisher-z confidence interval obtained from
+#' \deqn{
+#' z_{jk} = \operatorname{atanh}(r), \qquad
+#' \operatorname{SE}(z_{jk}) = \frac{1}{\sqrt{n_{jk}-3}},
+#' }
+#' followed by back-transformation with \code{tanh()}. Confidence intervals are currently available only for dense,
+#' unweighted outputs.
+#'
 #' \strong{Basic properties.}
 #' \eqn{\mathrm{bicor}(a x + b,\; c y + d) = \mathrm{sign}(ac)\,\mathrm{bicor}(x,y)}.
 #' With no missing data (and with per-column hybrid/robust standardisation), the
@@ -137,7 +188,7 @@
 #' @references
 #' Langfelder, P. & Horvath, S. (2012).
 #' Fast R Functions for Robust Correlations and Hierarchical Clustering.
-#' Journal of Statistical Software, 46(11), 1–17. \doi{10.18637/jss.v046.i11}
+#' Journal of Statistical Software, 46(11), 1-17. \doi{10.18637/jss.v046.i11}
 #'
 #' @importFrom Matrix Matrix
 #' @examples
@@ -147,6 +198,8 @@
 #'                        pearson_fallback = "hybrid")
 #' print(attr(R, "method"))
 #' summary(R)
+#' R_ci <- bicor(X[, 1:5], ci = TRUE)
+#' summary(R_ci)
 #'
 #' # Interactive viewing (requires shiny)
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
@@ -157,15 +210,84 @@
 #' @export
 bicor <- function(
     data,
+    na_method        = c("error", "pairwise"),
+    ci               = FALSE,
+    conf_level       = 0.95,
+    n_threads        = getOption("matrixCorr.threads", 1L),
+    output           = c("matrix", "sparse", "edge_list"),
+    threshold        = 0,
+    diag             = TRUE,
     c_const          = 9,
     max_p_outliers   = 1,
     pearson_fallback = c("hybrid", "none", "all"),
-    na_method        = c("error", "pairwise"),
     mad_consistent   = FALSE,
     w                = NULL,
-    sparse_threshold = NULL,
-    n_threads        = getOption("matrixCorr.threads", 1L)
+    sparse_threshold = NULL
 ) {
+  output_missing <- missing(output)
+  threshold_missing <- missing(threshold)
+  if (!is.null(sparse_threshold)) {
+    check_scalar_nonneg(sparse_threshold, arg = "sparse_threshold", strict = FALSE)
+    if (isTRUE(output_missing)) {
+      output <- "sparse"
+    } else if (!identical(output, "sparse")) {
+      abort_bad_arg(
+        "output",
+        message = "must be {.val sparse} when {.arg sparse_threshold} is supplied."
+      )
+    }
+    if (isTRUE(threshold_missing)) {
+      threshold <- sparse_threshold
+    } else if (!isTRUE(all.equal(as.numeric(threshold), as.numeric(sparse_threshold)))) {
+      abort_bad_arg(
+        "threshold",
+        message = "must match {.arg sparse_threshold} when both are supplied."
+      )
+    }
+  }
+  output_cfg <- .mc_validate_thresholded_output_request(
+    output = output,
+    threshold = threshold,
+    diag = diag
+  )
+
+  if (missing(na_method) &&
+      isFALSE(ci) &&
+      missing(n_threads) &&
+      identical(output_cfg$output, "matrix") &&
+      identical(output_cfg$threshold, 0) &&
+      isTRUE(output_cfg$diag) &&
+      identical(c_const, 9) &&
+      identical(max_p_outliers, 1) &&
+      missing(pearson_fallback) &&
+      isFALSE(mad_consistent) &&
+      is.null(w) &&
+      is.null(sparse_threshold)) {
+    numeric_data <- validate_corr_input(data)
+    colnames_data <- colnames(numeric_data)
+    prev_threads <- get_omp_threads()
+    on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
+    res <- bicor_matrix_cpp(
+      numeric_data,
+      c_const = 9,
+      maxPOutliers = 1,
+      pearson_fallback = 1L,
+      n_threads = getOption("matrixCorr.threads", 1L)
+    )
+    if (!is.null(colnames_data)) {
+      dimnames(res) <- .mc_square_dimnames(colnames_data)
+    }
+    return(.mc_structure_corr_matrix(
+      res,
+      class_name = "bicor",
+      method = "biweight_mid_correlation",
+      description = paste0(
+        "Median/MAD-based biweight mid-correlation (bicor); max_p_outliers = 1",
+        ", MAD = raw; fallback = hybrid; NA mode = error."
+      )
+    ))
+  }
+
   pf <- match.arg(pearson_fallback)
   pf_int <- switch(pf, "none" = 0L, "hybrid" = 1L, "all" = 2L)
   na_method <- match.arg(na_method)
@@ -179,6 +301,10 @@ bicor <- function(
                        closed_lower = FALSE,
                        closed_upper = TRUE)
   check_bool(mad_consistent, arg = "mad_consistent")
+  check_bool(ci, arg = "ci")
+  if (isTRUE(ci)) {
+    check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
+  }
   n_threads <- check_scalar_int_pos(n_threads, arg = "n_threads")
 
   if (!is.null(sparse_threshold)) {
@@ -193,11 +319,60 @@ bicor <- function(
   }
   colnames_data <- colnames(numeric_data)
   w <- check_weights(w, n = nrow(numeric_data), arg = "w")
+  if (isTRUE(ci) && !is.null(w)) {
+    abort_bad_arg(
+      "ci",
+      message = "Confidence intervals are unavailable when {.arg w} is supplied."
+    )
+  }
 
   # --- MAD consistency via effective c
   c_eff <- if (isTRUE(mad_consistent)) c_const * 1.4826 else c_const
+  dn <- .mc_square_dimnames(colnames_data)
+  desc <- paste0(
+    "Median/MAD-based biweight mid-correlation (bicor); max_p_outliers = ", max_p_outliers,
+    ", MAD = ", if (mad_consistent) "normal-consistent (1.4826 * raw)" else "raw",
+    "; fallback = ", pf, "; NA mode = ", na_method, "."
+  )
+
+  if (.mc_supports_direct_threshold_path(
+    method = "bicor",
+    na_method = na_method,
+    ci = ci,
+    output = output_cfg$output,
+    threshold = output_cfg$threshold,
+    pairwise = identical(na_method, "pairwise"),
+    has_ci = ci,
+    weighted = !is.null(w)
+  )) {
+    prev_threads <- get_omp_threads()
+    on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
+    trip <- bicor_threshold_triplets_cpp(
+      numeric_data,
+      c_const = c_eff,
+      maxPOutliers = max_p_outliers,
+      pearson_fallback = pf_int,
+      threshold = output_cfg$threshold,
+      diag = output_cfg$diag,
+      n_threads = n_threads
+    )
+    return(.mc_finalize_triplets_output(
+      triplets = trip,
+      output = output_cfg$output,
+      estimator_class = "bicor",
+      method = "biweight_mid_correlation",
+      description = desc,
+      threshold = output_cfg$threshold,
+      diag = output_cfg$diag,
+      source_dim = as.integer(c(ncol(numeric_data), ncol(numeric_data))),
+      source_dimnames = dn,
+      symmetric = TRUE
+    ))
+  }
 
   # --- choose backend
+  prev_threads <- get_omp_threads()
+  on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
   if (is.null(w) && na_method == "error") {
     res <- bicor_matrix_cpp(
       numeric_data,
@@ -233,48 +408,217 @@ bicor <- function(
       n_threads        = n_threads
     )
   }
+  res <- .mc_set_matrix_dimnames(res, colnames_data)
 
   # --- names & metadata
-  colnames(res) <- rownames(res) <- colnames_data
-  desc <- paste0(
-    "Median/MAD-based biweight mid-correlation (bicor); max_p_outliers = ", max_p_outliers,
-    ", MAD = ", if (mad_consistent) "normal-consistent (1.4826 * raw)" else "raw",
-    "; fallback = ", pf, "; NA mode = ", na_method, "."
-  )
-
-  # --- default: dense matrix with S3 class (original behaviour)
-  if (is.null(sparse_threshold)) {
-    return(.mc_structure_corr_matrix(
-      res,
-      class_name = "bicor",
-      method = "biweight_mid_correlation",
-      description = desc
-    ))
+  diagnostics <- NULL
+  ci_attr <- NULL
+  inference_attr <- NULL
+  if (isTRUE(ci)) {
+    n_complete <- .mc_bicor_n_complete(numeric_data)
+    diagnostics <- list(n_complete = .mc_set_matrix_dimnames(n_complete, colnames_data))
+    inference_attr <- .mc_bicor_large_sample_inference(
+      est = res,
+      n_complete = diagnostics$n_complete
+    )
+    ci_attr <- .mc_bicor_fisher_ci(
+      est = res,
+      n_complete = diagnostics$n_complete,
+      conf_level = conf_level
+    )
   }
 
-  # --- optional sparse thresholding (S4 Matrix, no S3 class mutation)
-  # zero-out small entries safely, keeping NAs intact
-  idx <- !is.na(res) & (abs(res) < sparse_threshold)
-  if (any(idx)) res[idx] <- 0
-  diag(res) <- 1
-
-  # mark degenerate columns (only diagonal finite) with NA diagonal for sparse reporting
-  degenerate_idx <- which(rowSums(is.finite(res)) <= 1)
-  if (length(degenerate_idx)) {
-    res[cbind(degenerate_idx, degenerate_idx)] <- NA_real_
-  }
-
-  sparse_obj <- Matrix::forceSymmetric(Matrix::Matrix(res, sparse = TRUE), uplo = "U")
-  sparse_info <- list(class = class(sparse_obj), threshold = sparse_threshold)
-  res_dense <- as.matrix(sparse_obj)
-  res_dense <- .mc_structure_corr_matrix(
-    res_dense,
+  out <- .mc_structure_corr_matrix(
+    res,
     class_name = "bicor",
     method = "biweight_mid_correlation",
-    description = paste0(desc, " Sparse threshold = ", sparse_threshold, ".")
+    description = desc,
+    diagnostics = diagnostics,
+    extra_attrs = c(
+      if (!is.null(ci_attr)) {
+        list(
+          ci = ci_attr,
+          conf.level = conf_level
+        )
+      },
+      if (!is.null(inference_attr)) {
+        list(inference = inference_attr)
+      }
+    )
   )
-  attr(res_dense, "sparse_info") <- sparse_info
-  res_dense
+  .mc_finalize_corr_output(
+    out,
+    output = output_cfg$output,
+    threshold = output_cfg$threshold,
+    diag = output_cfg$diag
+  )
+}
+
+.mc_bicor_n_complete <- function(x) {
+  x <- as.matrix(x)
+  fin <- is.finite(x)
+  n_complete <- crossprod(unclass(fin))
+  storage.mode(n_complete) <- "integer"
+  n_complete
+}
+
+.mc_bicor_large_sample_inference <- function(est, n_complete) {
+  est <- as.matrix(est)
+  n_complete <- as.matrix(n_complete)
+  p <- ncol(est)
+  dn <- dimnames(est)
+
+  statistic <- matrix(NA_real_, p, p, dimnames = dn)
+  p_value <- matrix(NA_real_, p, p, dimnames = dn)
+  Z <- matrix(NA_real_, p, p, dimnames = dn)
+  parameter <- matrix(NA_real_, p, p, dimnames = dn)
+
+  valid <- is.finite(est) & is.finite(n_complete) & n_complete > 2
+  exact <- valid & abs(est) >= 1
+  approx <- valid & !exact
+
+  parameter[valid] <- n_complete[valid] - 2
+  if (any(exact)) {
+    statistic[exact] <- Inf
+    p_value[exact] <- 0
+    Z[exact] <- sign(est[exact]) * Inf
+  }
+  if (any(approx)) {
+    eps <- sqrt(.Machine$double.eps)
+    est_clip <- pmax(pmin(est[approx], 1 - eps), -1 + eps)
+    df <- n_complete[approx] - 2
+    statistic[approx] <- sqrt(df) * abs(est_clip) / sqrt(1 - est_clip^2)
+    p_value[approx] <- 2 * stats::pt(statistic[approx], df = df, lower.tail = FALSE)
+    Z[approx] <- atanh(est_clip) * sqrt(df)
+  }
+
+  diag(parameter) <- NA_real_
+  diag(p_value) <- 0
+  diag(statistic) <- Inf
+  diag(Z) <- Inf
+
+  list(
+    method = "large_sample_bicor",
+    estimate = unclass(est),
+    statistic = statistic,
+    p_value = p_value,
+    Z = Z,
+    parameter = parameter,
+    n_obs = n_complete,
+    alternative = "two.sided"
+  )
+}
+
+.mc_bicor_fisher_ci <- function(est, n_complete, conf_level = 0.95) {
+  est <- as.matrix(est)
+  n_complete <- as.matrix(n_complete)
+  p <- ncol(est)
+  dn <- dimnames(est)
+  lwr <- matrix(NA_real_, p, p, dimnames = dn)
+  upr <- matrix(NA_real_, p, p, dimnames = dn)
+  diag(lwr) <- 1
+  diag(upr) <- 1
+
+  valid <- is.finite(est) & is.finite(n_complete) & n_complete > 3
+  exact <- valid & abs(est) >= 1
+  approx <- valid & !exact
+  if (any(exact)) {
+    lwr[exact] <- est[exact]
+    upr[exact] <- est[exact]
+  }
+  if (any(approx)) {
+    eps <- sqrt(.Machine$double.eps)
+    est_clip <- pmax(pmin(est[approx], 1 - eps), -1 + eps)
+    z <- atanh(est_clip)
+    se <- 1 / sqrt(n_complete[approx] - 3)
+    crit <- stats::qnorm(0.5 * (1 + conf_level))
+    lwr[approx] <- tanh(z - crit * se)
+    upr[approx] <- tanh(z + crit * se)
+  }
+
+  list(
+    est = unclass(est),
+    lwr.ci = lwr,
+    upr.ci = upr,
+    conf.level = conf_level,
+    ci.method = "fisher_z_bicor"
+  )
+}
+
+.mc_bicor_ci_attr <- function(x) {
+  attr(x, "ci", exact = TRUE)
+}
+
+.mc_bicor_inference_attr <- function(x) {
+  attr(x, "inference", exact = TRUE)
+}
+
+.mc_bicor_pairwise_summary <- function(object,
+                                       digits = 4,
+                                       ci_digits = 3,
+                                       p_digits = 4,
+                                       show_ci = NULL) {
+  show_ci <- .mc_validate_yes_no(
+    show_ci,
+    arg = "show_ci",
+    default = .mc_display_option("summary_show_ci", "yes")
+  )
+  check_inherits(object, "bicor")
+
+  est <- as.matrix(object)
+  rn <- rownames(est); cn <- colnames(est)
+  if (is.null(rn)) rn <- as.character(seq_len(nrow(est)))
+  if (is.null(cn)) cn <- as.character(seq_len(ncol(est)))
+
+  ci <- .mc_bicor_ci_attr(object)
+  inf <- .mc_bicor_inference_attr(object)
+  diag_attr <- attr(object, "diagnostics", exact = TRUE)
+  include_ci <- identical(show_ci, "yes") && !is.null(ci)
+  include_p <- !is.null(inf) && !is.null(inf$p_value)
+
+  rows <- vector("list", nrow(est) * (ncol(est) - 1L) / 2L)
+  k <- 0L
+  for (i in seq_len(nrow(est) - 1L)) {
+    for (j in (i + 1L):ncol(est)) {
+      k <- k + 1L
+      rec <- list(
+        var1 = rn[i],
+        var2 = cn[j],
+        estimate = round(est[i, j], digits)
+      )
+      if (is.list(diag_attr) && is.matrix(diag_attr$n_complete)) {
+        rec$n_complete <- as.integer(diag_attr$n_complete[i, j])
+      }
+      if (include_ci) {
+        rec$lwr <- if (is.finite(ci$lwr.ci[i, j])) round(ci$lwr.ci[i, j], ci_digits) else NA_real_
+        rec$upr <- if (is.finite(ci$upr.ci[i, j])) round(ci$upr.ci[i, j], ci_digits) else NA_real_
+      }
+      if (include_p) {
+        rec$statistic <- if (is.finite(inf$statistic[i, j])) round(inf$statistic[i, j], digits) else NA_real_
+        rec$fisher_z <- if (is.finite(inf$Z[i, j])) round(inf$Z[i, j], digits) else NA_real_
+        rec$p_value <- if (is.finite(inf$p_value[i, j])) round(inf$p_value[i, j], p_digits) else NA_real_
+      }
+      rows[[k]] <- rec
+    }
+  }
+
+  df <- do.call(rbind.data.frame, rows)
+  rownames(df) <- NULL
+  num_cols <- intersect(c("estimate", "lwr", "upr", "statistic", "fisher_z", "p_value"), names(df))
+  int_cols <- intersect(c("n_complete"), names(df))
+  for (nm in num_cols) df[[nm]] <- as.numeric(df[[nm]])
+  for (nm in int_cols) df[[nm]] <- as.integer(df[[nm]])
+
+  out <- .mc_finalize_summary_df(df, class_name = "summary.bicor")
+  attr(out, "overview") <- .mc_summary_corr_matrix(object)
+  attr(out, "has_ci") <- include_ci
+  attr(out, "has_p") <- include_p
+  attr(out, "conf.level") <- if (is.null(ci)) NA_real_ else ci$conf.level
+  attr(out, "digits") <- digits
+  attr(out, "ci_digits") <- ci_digits
+  attr(out, "p_digits") <- p_digits
+  attr(out, "inference_method") <- if (is.null(inf)) NA_character_ else inf$method
+  out
 }
 
 #' @rdname bicor
@@ -296,6 +640,7 @@ diag.bicor <- function(x, ...) {
 #' @param max_vars Optional maximum number of visible columns; `NULL` derives this
 #'   from console width.
 #' @param width Optional display width; defaults to \code{getOption("width")}.
+#' @param ci_digits Integer; digits for bicor confidence limits.
 #' @param show_ci One of \code{"yes"} or \code{"no"}.
 #' @param na_print Character; how to display missing values.
 #' @param ... Additional arguments passed to \code{print()}.
@@ -308,6 +653,7 @@ print.bicor <- function(x,
                         topn = NULL,
                         max_vars = NULL,
                         width    = NULL,
+                        ci_digits = 3,
                         show_ci = NULL,
                         na_print = "NA",
                         ...) {
@@ -343,6 +689,7 @@ print.bicor <- function(x,
 #'   \code{"white"}, \code{"steelblue1"}.
 #' @param value_text_size Numeric; font size for cell labels. Set to \code{NULL}
 #'   to suppress labels (recommended for large matrices).
+#' @param ci_text_size Text size for confidence-interval labels in the heatmap.
 #' @param show_value Logical; if \code{TRUE} (default), overlay numeric values
 #'   on the heatmap tiles.
 #' @param na_fill Fill colour for \code{NA} cells. Default \code{"grey90"}.
@@ -361,6 +708,7 @@ plot.bicor <- function(
     mid_color = "white",
     high_color = "steelblue1",
     value_text_size = 3,
+    ci_text_size = 2.5,
     show_value = TRUE,
     na_fill = "grey90",
     ...
@@ -404,6 +752,30 @@ plot.bicor <- function(
   df <- tm
   df$Var1 <- factor(as.character(df$Var1), levels = rev(rn))
   df$Var2 <- factor(as.character(df$Var2), levels = cn)
+  ci <- .mc_bicor_ci_attr(x)
+  if (!is.null(ci) && is.matrix(ci$lwr.ci) && is.matrix(ci$upr.ci)) {
+    lwr_mat <- ci$lwr.ci
+    upr_mat <- ci$upr.ci
+    if (reorder == "hclust" && ncol(mat) > 1) {
+      lwr_mat <- lwr_mat[ord, ord, drop = FALSE]
+      upr_mat <- upr_mat[ord, ord, drop = FALSE]
+    }
+    dimnames(lwr_mat) <- list(rn, cn)
+    dimnames(upr_mat) <- list(rn, cn)
+    df_lwr <- as.data.frame(as.table(lwr_mat), stringsAsFactors = FALSE)
+    df_upr <- as.data.frame(as.table(upr_mat), stringsAsFactors = FALSE)
+    names(df_lwr) <- c("Var1", "Var2", "lwr")
+    names(df_upr) <- c("Var1", "Var2", "upr")
+    df <- Reduce(
+      function(a, b) merge(a, b, by = c("Var1", "Var2"), all.x = TRUE),
+      list(df, df_lwr, df_upr)
+    )
+    df$Var1 <- factor(as.character(df$Var1), levels = rev(rn))
+    df$Var2 <- factor(as.character(df$Var2), levels = cn)
+  } else {
+    df$lwr <- NA_real_
+    df$upr <- NA_real_
+  }
 
   # Triangle filtering
   if (triangle != "full") {
@@ -418,6 +790,11 @@ plot.bicor <- function(
                    upper = i_true <= j)
     df <- df[keep, , drop = FALSE]
   }
+  df$ci_label <- ifelse(
+    is.na(df$lwr) | is.na(df$upr) | (as.character(df$Var1) == as.character(df$Var2)),
+    NA_character_,
+    sprintf("[%.3f, %.3f]", df$lwr, df$upr)
+  )
 
   p <- ggplot2::ggplot(df, ggplot2::aes(Var2, Var1, fill = bicor)) +
     ggplot2::geom_tile(color = "white") +
@@ -440,6 +817,14 @@ plot.bicor <- function(
       size = value_text_size, color = "black"
     )
   }
+  if (isTRUE(show_value) && any(!is.na(df$ci_label))) {
+    p <- p + ggplot2::geom_text(
+      ggplot2::aes(label = ci_label, y = as.numeric(Var1) - 0.22),
+      size = ci_text_size,
+      color = "gray30",
+      na.rm = TRUE
+    )
+  }
 
   return(p)
 }
@@ -447,10 +832,49 @@ plot.bicor <- function(
 #' @rdname bicor
 #' @method summary bicor
 #' @param object An object of class \code{bicor}.
+#' @param ci_digits Integer; digits for bicor confidence limits in the pairwise
+#'   summary.
+#' @param p_digits Integer; digits for bicor p-values in the pairwise summary.
 #' @export
 summary.bicor <- function(object, n = NULL, topn = NULL,
                           max_vars = NULL, width = NULL,
+                          ci_digits = 3,
+                          p_digits = 4,
                           show_ci = NULL, ...) {
-  .mc_summary_corr_matrix(object, topn = topn)
+  check_inherits(object, "bicor")
+  if (is.null(.mc_bicor_ci_attr(object))) {
+    return(.mc_summary_corr_matrix(object, topn = topn))
+  }
+  .mc_bicor_pairwise_summary(
+    object,
+    ci_digits = ci_digits,
+    p_digits = p_digits,
+    show_ci = show_ci
+  )
 }
+
+#' @rdname bicor
+#' @method print summary.bicor
+#' @param x An object of class \code{summary.bicor}.
+#' @export
+print.summary.bicor <- function(x, digits = NULL, n = NULL,
+                                topn = NULL, max_vars = NULL,
+                                width = NULL, show_ci = NULL, ...) {
+  extra_items <- c(inference = attr(x, "inference_method", exact = TRUE))
+  .mc_print_pairwise_summary_digest(
+    x,
+    title = "Biweight mid-correlation summary",
+    digits = .mc_coalesce(digits, 4),
+    n = n,
+    topn = topn,
+    max_vars = max_vars,
+    width = width,
+    show_ci = show_ci,
+    ci_method = "fisher_z_bicor",
+    extra_items = extra_items,
+    ...
+  )
+  invisible(x)
+}
+
 

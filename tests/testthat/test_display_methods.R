@@ -24,7 +24,8 @@ test_that("summary output remains bounded and preserves full underlying data", {
   sm <- summary(obj, topn = 6)
   txt <- capture.output(print(sm, n = 10, topn = 3, max_vars = 6))
 
-  expect_s3_class(sm, "summary_corr_matrix")
+  expect_s3_class(sm, "summary.matrixCorr")
+  expect_s3_class(sm, "summary.corr_matrix")
   expect_equal(nrow(sm$top_results), 6L)
   expect_true(any(grepl("^Correlation summary$", txt)))
   expect_true(any(grepl("^Strongest pairs by \\|estimate\\|$", txt)))
@@ -148,8 +149,8 @@ test_that("plot methods honour show_value for numeric overlays", {
 
   p1 <- plot(pearson_corr(X, ci = TRUE), show_value = FALSE)
   p2 <- plot(pbcor(X), show_value = FALSE)
-  p3 <- plot(schafer_corr(X), show_value = FALSE)
-  p4 <- plot(schafer_corr(X), show_value = TRUE)
+  p3 <- plot(shrinkage_corr(X), show_value = FALSE)
+  p4 <- plot(shrinkage_corr(X), show_value = TRUE)
 
   expect_false(any(geom_names(p1) == "GeomText"))
   expect_false(any(geom_names(p2) == "GeomText"))
