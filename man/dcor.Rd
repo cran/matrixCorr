@@ -10,7 +10,7 @@
 \usage{
 dcor(
   data,
-  na_method = c("error", "pairwise"),
+  na_method = c("error", "pairwise", "complete"),
   p_value = FALSE,
   n_threads = getOption("matrixCorr.threads", 1L),
   output = c("matrix", "sparse", "edge_list"),
@@ -68,7 +68,10 @@ columns. All non-numeric columns are dropped. Columns must be numeric.}
 \item{na_method}{Character scalar controlling missing-data handling.
 \code{"error"} rejects missing, \code{NaN}, and infinite values.
 \code{"pairwise"} recomputes each association on its own pairwise
-complete-case overlap.}
+complete-case overlap. This is permissive, but different matrix entries
+may be based on different rows. \code{"complete"} performs listwise
+deletion once across the retained numeric columns and then computes the
+estimator on the common complete sample.}
 
 \item{p_value}{Logical (default \code{FALSE}). If \code{TRUE}, attach
 pairwise p-values, test statistics, and degrees of freedom from the
@@ -194,7 +197,10 @@ referenced to a Student \eqn{t}-distribution with \eqn{M - 1} degrees of
 freedom. The reported p-value uses the upper-tail probability
 \eqn{P(t_{M-1} \ge T)}. This inference payload is attached as metadata; the
 main returned matrix is unchanged unless \code{p_value} is explicitly
-requested.
+requested. The t reference is an asymptotic approximation. For small
+complete-case sample sizes, especially when \eqn{M - 1} is small, p-values
+can be unstable and should be interpreted cautiously; a permutation-based
+dependence test is preferable when exact small-sample calibration matters.
 }
 \note{
 Requires \eqn{n \ge 4}. Columns with (near) zero unbiased distance
@@ -202,6 +208,7 @@ variance yield \code{NA} in their row/column. Typical per-pair cost uses
 the \eqn{O(n \log n)} fast path, with \eqn{O(n^2)} fallback when needed.
 }
 \examples{
+\donttest{
 ## Independent variables -> dCor ~ 0
 set.seed(1)
 X <- cbind(a = rnorm(200), b = rnorm(200))
@@ -233,10 +240,13 @@ print(D3[1:3, 1:3], digits = 2)
 ## Optional inference
 D4 <- dcor(XY, p_value = TRUE)
 summary(D4)
+estimate(D4)
+tidy(D4)
 
 # Interactive viewing (requires shiny)
 if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
   view_corr_shiny(D)
+}
 }
 
 }

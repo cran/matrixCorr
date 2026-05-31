@@ -74,6 +74,8 @@
 #' Rshr <- shrinkage_corr(X)
 #' print(Rshr, digits = 2, n = 6, max_vars = 6)
 #' summary(Rshr)
+#' estimate(Rshr)
+#' tidy(Rshr)
 #' plot(Rshr)
 #'
 #' ## Shrinkage typically moves the sample correlation closer to the truth
@@ -107,8 +109,7 @@ shrinkage_corr <- function(data,
   colnames_data <- colnames(numeric_data)
 
   prev_threads <- .mc_prepare_omp_threads(
-    n_threads,
-    n_threads_missing = missing(n_threads)
+    n_threads
   )
   if (!is.null(prev_threads)) {
     on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
@@ -125,9 +126,10 @@ shrinkage_corr <- function(data,
     class_name = "shrinkage_corr",
     method = "schafer_shrinkage",
     description = "Schafer-Strimmer shrinkage correlation matrix",
+    symmetric = TRUE,
     classes = c("shrinkage_corr", "schafer_corr", "matrix")
   )
-  .mc_finalize_corr_output(
+  .mc_finalize_corr_output_fast(
     out,
     output = output_cfg$output,
     threshold = output_cfg$threshold,
@@ -327,4 +329,5 @@ summary.shrinkage_corr <- function(object, n = NULL, topn = NULL,
 #' @method summary schafer_corr
 #' @export
 summary.schafer_corr <- summary.shrinkage_corr
+
 

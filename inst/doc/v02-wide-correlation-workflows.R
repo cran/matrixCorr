@@ -34,6 +34,10 @@ plot(R_pear)
 ## -----------------------------------------------------------------------------
 R_pear_ci <- pearson_corr(X, ci = TRUE)
 summary(R_pear_ci)
+estimate(R_pear_ci)
+confint(R_pear_ci)
+ci(R_pear_ci)
+tidy(R_pear_ci)
 
 ## -----------------------------------------------------------------------------
 set.seed(11)

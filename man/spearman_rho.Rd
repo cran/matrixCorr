@@ -10,7 +10,7 @@
 \usage{
 spearman_rho(
   data,
-  na_method = c("error", "pairwise"),
+  na_method = c("error", "pairwise", "complete"),
   ci = FALSE,
   conf_level = 0.95,
   n_threads = getOption("matrixCorr.threads", 1L),
@@ -74,7 +74,10 @@ at least two non-missing values.}
 \item{na_method}{Character scalar controlling missing-data handling.
 \code{"error"} rejects missing, \code{NaN}, and infinite values.
 \code{"pairwise"} recomputes each correlation on its own pairwise
-complete-case overlap.}
+complete-case overlap. This is permissive, but different matrix entries
+may be based on different rows. \code{"complete"} performs listwise
+deletion once across the retained numeric columns and then computes the
+estimator on the common complete sample.}
 
 \item{ci}{Logical (default \code{FALSE}). If \code{TRUE}, attach
 jackknife Euclidean-likelihood confidence intervals for the off-diagonal
@@ -270,6 +273,10 @@ plot(sp_X)
 sp_ci <- spearman_rho(X[, 1:3], ci = TRUE)
 print(sp_ci, show_ci = "yes")
 summary(sp_ci)
+estimate(sp_ci)
+tidy(sp_ci)
+ci(sp_ci)
+confint(sp_ci)
 
 ## Ties handled via mid-ranks
 tied <- cbind(

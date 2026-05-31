@@ -6,6 +6,7 @@
 #include <vector>
 #include <numeric>
 #include <limits>
+#include "matrixCorr_omp.h"
 
 namespace matrixCorr_detail {
 
@@ -286,18 +287,23 @@ inline void rank_vector_eps(const arma::vec& x,
   const arma::uword n = x.n_elem;
   // Sort indices (non-stable is faster, stability not needed for average tie ranks)
   arma::uvec idx = stable ? arma::stable_sort_index(x) : arma::sort_index(x);
-  // Build sorted values (contiguous for cache-friendly tie scan)
-  arma::vec xs = x.elem(idx);
-
   // no ties
   bool has_tie = false;
-  if (abs_eps == 0.0 && rel_eps == 0.0) {
-    for (arma::uword k = 1; k < n; ++k) {
-      if (xs[k] == xs[k - 1]) { has_tie = true; break; }
-    }
-  } else {
-    for (arma::uword k = 1; k < n; ++k) {
-      if (is_close(xs[k], xs[k - 1], abs_eps, rel_eps)) { has_tie = true; break; }
+  if (n > 1u) {
+    if (abs_eps == 0.0 && rel_eps == 0.0) {
+      double prev = x[idx[0]];
+      for (arma::uword k = 1; k < n; ++k) {
+        const double cur = x[idx[k]];
+        if (cur == prev) { has_tie = true; break; }
+        prev = cur;
+      }
+    } else {
+      double prev = x[idx[0]];
+      for (arma::uword k = 1; k < n; ++k) {
+        const double cur = x[idx[k]];
+        if (is_close(cur, prev, abs_eps, rel_eps)) { has_tie = true; break; }
+        prev = cur;
+      }
     }
   }
 
@@ -307,6 +313,9 @@ inline void rank_vector_eps(const arma::vec& x,
       out[idx[k]] = static_cast<double>(k + 1);
     return;
   }
+
+  // Build sorted values only when ties are present.
+  arma::vec xs = x.elem(idx);
 
   // average ranks over tie groups
   arma::uword i = 0;
@@ -527,8 +536,9 @@ namespace linalg {
 // temporary full matrix.
 inline void copy_upper_to_lower_inplace(arma::mat& M) {
   const arma::uword p = M.n_cols;
+  const bool use_omp = (p >= 64u && omp_get_max_threads() > 1);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (use_omp)
 #endif
   for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
     const arma::uword uj = static_cast<arma::uword>(j);
@@ -567,8 +577,9 @@ return XtX;
 inline void subtract_n_outer_mu(arma::mat& M, const arma::rowvec& mu, double n) {
   const arma::uword p = M.n_cols;
   const double scale = -n;
+  const bool use_omp = (p >= 64u && omp_get_max_threads() > 1);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (use_omp)
 #endif
   for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
     const arma::uword uj = static_cast<arma::uword>(j);
@@ -581,11 +592,48 @@ inline void subtract_n_outer_mu(arma::mat& M, const arma::rowvec& mu, double n) 
   copy_upper_to_lower_inplace(M);
 }
 
-// M := scale * (M - n * mu * mu') on the upper triangle, optionally adding a
-// diagonal shift, then symmetrize once.
+// Compute (X - mu)'(X - mu) without forming a centered copy of X.
+// This avoids an extra full-matrix symmetrization compared with
+// crossprod_no_copy() + subtract_n_outer_mu().
+inline arma::mat centered_crossprod_no_copy(const arma::mat& X, arma::rowvec& mu_out) {
+  const arma::uword n = X.n_rows;
+  const arma::uword p = X.n_cols;
 
-// M := scale * (M - n * mu * mu') on the upper triangle, optionally adding a
-// diagonal shift, then symmetrize once.
+  mu_out = arma::sum(X, 0) / static_cast<double>(n);
+
+  arma::mat XtX(p, p);
+#if defined(ARMA_USE_BLAS)
+{
+  XtX.zeros();
+  const arma::blas_int N = static_cast<arma::blas_int>(p);
+  const arma::blas_int K = static_cast<arma::blas_int>(n);
+  const double alpha = 1.0, beta = 0.0;
+  const char uplo  = 'U';
+  const char trans = 'T';
+  arma::blas::syrk<double>(&uplo, &trans, &N, &K,
+                           &alpha, X.memptr(), &K,
+                           &beta,  XtX.memptr(), &N);
+}
+#else
+XtX = X.t() * X;
+#endif
+
+  const double scale = -static_cast<double>(n);
+  const bool use_omp = (p >= 64u && omp_get_max_threads() > 1);
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if (use_omp)
+#endif
+  for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
+    const arma::uword uj = static_cast<arma::uword>(j);
+    const double muj = mu_out[uj];
+    const double fj  = scale * muj; // = -n * mu_j
+    for (arma::uword i = 0; i <= uj; ++i) {
+      XtX(i, uj) += fj * mu_out[i];
+    }
+  }
+  copy_upper_to_lower_inplace(XtX);
+  return XtX;
+}
 
 // Ensure positive definiteness by geometric diagonal jitter until chol succeeds.
 inline void make_pd_inplace(arma::mat& S, double& jitter, const double max_jitter = 1e-2) {
@@ -630,8 +678,9 @@ inline bool precision_to_pcor_inplace(arma::mat& Theta) {
   d = 1.0 / arma::sqrt(d);
 
   const arma::uword p = Theta.n_cols;
+  const bool use_omp = (p >= 64u && omp_get_max_threads() > 1);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (use_omp)
 #endif
   for (arma::sword j = 0; j < static_cast<arma::sword>(p); ++j) {
     const arma::uword uj = static_cast<arma::uword>(j);
@@ -914,11 +963,9 @@ inline bool graphical_lasso(const arma::mat& S,
   Theta.zeros(p, p);
   for (arma::uword j = 0; j < p; ++j) {
     double quad = 0.0;
-    arma::uword k = 0;
     for (arma::uword i = 0; i < p; ++i) {
       if (i == j) continue;
       quad += W(i, j) * Beta(i, j);
-      ++k;
     }
     const double denom = W(j, j) - quad;
     if (!(denom > 0.0) || !std::isfinite(denom)) return false;
@@ -1526,6 +1573,12 @@ inline void make_Cinv_by_method(const std::vector<int>& tim_ord,
                                 const std::vector<int>& met_ord,
                                 int nm_levels, double rho,
                                 arma::mat& Cinv) {
+  if (tim_ord.size() != met_ord.size()) {
+    Rcpp::stop("make_Cinv_by_method(): time/method vectors must have the same length.");
+  }
+  if (nm_levels <= 0) {
+    Rcpp::stop("make_Cinv_by_method(): method level count must be positive.");
+  }
   Cinv.zeros(tim_ord.size(), tim_ord.size());
   const double r2 = rho * rho;
   const double denom = std::max(1.0 - r2, 1e-12);
@@ -1535,15 +1588,19 @@ inline void make_Cinv_by_method(const std::vector<int>& tim_ord,
     std::vector<int> idx;
     idx.reserve(tim_ord.size());
     for (int k = 0; k < (int)tim_ord.size(); ++k) {
+      if (met_ord[k] < -1 || met_ord[k] >= nm_levels) {
+        Rcpp::stop("make_Cinv_by_method(): method code out of bounds.");
+      }
       if (met_ord[k] == l && tim_ord[k] >= 0) idx.push_back(k);
     }
 
-      // walk contiguous runs in this idx (consecutive entries in 'idx' are consecutive in the subject ordering)
+      // Walk contiguous runs in subject order. A method can appear in multiple
+      // separated time segments, especially in irregular panels; each segment
+      // needs its own AR(1) block.
       int s = 0;
       while (s < (int)idx.size()) {
         int e = s;
-        // same method by construction; runs are contiguous in 'idx'
-        while (e + 1 < (int)idx.size()) ++e;
+        while (e + 1 < (int)idx.size() && idx[e + 1] == idx[e] + 1) ++e;
         const int L = e - s + 1;
         if (L == 1) {
           Cinv(idx[s], idx[s]) += 1.0;
@@ -1668,10 +1725,14 @@ inline BySubject group_by_subject(const std::vector<int>& subj_idx,
     if (static_cast<int>(method.size()) > 0) {
       const int v = method[i];
       S.met[j].push_back(v == NA_INTEGER ? -1 : (v - 1));
+    } else {
+      S.met[j].push_back(-1);
     }
     if (static_cast<int>(time.size()) > 0) {
       const int v = time[i];
       S.tim[j].push_back(v == NA_INTEGER ? -1 : (v - 1));
+    } else {
+      S.tim[j].push_back(-1);
     }
   }
   return S;
@@ -1688,6 +1749,9 @@ inline void build_U_base(const std::vector<int>& met_i,   // size n_i, −1 allo
                          int nt,                          // #time   levels used in U
                          arma::mat& U)                    // n_i x r_base
 {
+  if (met_i.size() != tim_i.size()) {
+    Rcpp::stop("build_U_base(): method/time vectors must have the same length.");
+  }
   const int n_i   = static_cast<int>(tim_i.size());
   const int rbase = 1 + (nm > 0 ? nm : 0) + (nt > 0 ? nt : 0);
   U.zeros(n_i, rbase);
@@ -1696,11 +1760,19 @@ inline void build_U_base(const std::vector<int>& met_i,   // size n_i, −1 allo
 
   int col = 1;
   if (nm > 0) {
-    for (int t = 0; t < n_i; ++t) { const int l = met_i[t]; if (l >= 0) U(t, col + l) = 1.0; }
+    for (int t = 0; t < n_i; ++t) {
+      const int l = met_i[t];
+      if (l >= nm) Rcpp::stop("build_U_base(): method code out of bounds.");
+      if (l >= 0) U(t, col + l) = 1.0;
+    }
     col += nm;
   }
   if (nt > 0) {
-    for (int t = 0; t < n_i; ++t) { const int tt = tim_i[t]; if (tt >= 0) U(t, col + tt) = 1.0; }
+    for (int t = 0; t < n_i; ++t) {
+      const int tt = tim_i[t];
+      if (tt >= nt) Rcpp::stop("build_U_base(): time code out of bounds.");
+      if (tt >= 0) U(t, col + tt) = 1.0;
+    }
   }
 }
 
@@ -1710,20 +1782,29 @@ inline void gram_UtU(const std::vector<int>& met_i,
                      int n_i, int nm, int nt,
                      arma::mat& UtU)                      // r x r
 {
+  if ((int)met_i.size() != n_i || (int)tim_i.size() != n_i) {
+    Rcpp::stop("gram_UtU(): input vectors must match n_i.");
+  }
   const int r = 1 + (nm > 0 ? nm : 0) + (nt > 0 ? nt : 0);
   UtU.zeros(r, r);
   UtU(0, 0) = n_i;
 
   if (nm > 0) {
     arma::vec cm(nm, arma::fill::zeros);
-    for (int v : met_i) if (v >= 0) cm[v] += 1.0;
+    for (int v : met_i) {
+      if (v >= nm) Rcpp::stop("gram_UtU(): method code out of bounds.");
+      if (v >= 0) cm[v] += 1.0;
+    }
     for (int l = 0; l < nm; ++l) {
       UtU(0, 1 + l) = UtU(1 + l, 0) = cm[l];
       UtU(1 + l, 1 + l) = cm[l];
     }
     if (nt > 0) {
       arma::vec ct(nt, arma::fill::zeros);
-      for (int v : tim_i) if (v >= 0) ct[v] += 1.0;
+      for (int v : tim_i) {
+        if (v >= nt) Rcpp::stop("gram_UtU(): time code out of bounds.");
+        if (v >= 0) ct[v] += 1.0;
+      }
       for (int t = 0; t < nt; ++t) {
         const int jt = 1 + nm + t;
         UtU(0, jt) = UtU(jt, 0) = ct[t];
@@ -1732,6 +1813,8 @@ inline void gram_UtU(const std::vector<int>& met_i,
       arma::mat cmt(nm, nt, arma::fill::zeros);
       for (int k = 0; k < n_i; ++k) {
         const int l = met_i[k], t = tim_i[k];
+        if (l >= nm) Rcpp::stop("gram_UtU(): method code out of bounds.");
+        if (t >= nt) Rcpp::stop("gram_UtU(): time code out of bounds.");
         if (l >= 0 && t >= 0) cmt(l, t) += 1.0;
       }
       for (int l = 0; l < nm; ++l)
@@ -1743,7 +1826,10 @@ inline void gram_UtU(const std::vector<int>& met_i,
     }
   } else if (nt > 0) {
     arma::vec ct(nt, arma::fill::zeros);
-    for (int v : tim_i) if (v >= 0) ct[v] += 1.0;
+    for (int v : tim_i) {
+      if (v >= nt) Rcpp::stop("gram_UtU(): time code out of bounds.");
+      if (v >= 0) ct[v] += 1.0;
+    }
     for (int t = 0; t < nt; ++t) {
       const int jt = 1 + t;
       UtU(0, jt) = UtU(jt, 0) = ct[t];
@@ -1761,6 +1847,9 @@ inline void accumulate_Ut_vec(const std::vector<int>& rows_i,
                               Accessor v, arma::vec& Utv)         // length r
 {
   const int n_i = static_cast<int>(rows_i.size());
+  if ((int)met_i.size() != n_i || (int)tim_i.size() != n_i) {
+    Rcpp::stop("accumulate_Ut_vec(): input vectors must match rows_i.");
+  }
   const int r_expected = 1 + (nm > 0 ? nm : 0) + (nt > 0 ? nt : 0);
   Utv.zeros(r_expected);
 
@@ -1771,7 +1860,10 @@ inline void accumulate_Ut_vec(const std::vector<int>& rows_i,
   if (nm > 0) {
     for (int l = 0; l < nm; ++l) {
       double sm = 0.0;
-      for (int k = 0; k < n_i; ++k) if (met_i[k] == l) sm += v(rows_i[k]);
+      for (int k = 0; k < n_i; ++k) {
+        if (met_i[k] >= nm) Rcpp::stop("accumulate_Ut_vec(): method code out of bounds.");
+        if (met_i[k] == l) sm += v(rows_i[k]);
+      }
       Utv[1 + l] = sm;
     }
   }
@@ -1779,7 +1871,10 @@ inline void accumulate_Ut_vec(const std::vector<int>& rows_i,
     const int off = 1 + (nm > 0 ? nm : 0);
     for (int t = 0; t < nt; ++t) {
       double st = 0.0;
-      for (int k = 0; k < n_i; ++k) if (tim_i[k] == t) st += v(rows_i[k]);
+      for (int k = 0; k < n_i; ++k) {
+        if (tim_i[k] >= nt) Rcpp::stop("accumulate_Ut_vec(): time code out of bounds.");
+        if (tim_i[k] == t) st += v(rows_i[k]);
+      }
       Utv[off + t] = st;
     }
   }
@@ -1793,6 +1888,13 @@ inline void add_U_times(const std::vector<int>& rows_i,
                         const arma::vec& a, arma::vec& out)        // out length n_i
 {
   const int n_i = static_cast<int>(rows_i.size());
+  if ((int)met_i.size() != n_i || (int)tim_i.size() != n_i) {
+    Rcpp::stop("add_U_times(): input vectors must match rows_i.");
+  }
+  const int a_expected = 1 + (nm > 0 ? nm : 0) + (nt > 0 ? nt : 0);
+  if ((int)a.n_elem != a_expected) {
+    Rcpp::stop("add_U_times(): coefficient vector has unexpected length.");
+  }
   const double a0 = a[0];
 
   std::vector<double> am(nm > 0 ? nm : 0), at(nt > 0 ? nt : 0);
@@ -1801,6 +1903,8 @@ inline void add_U_times(const std::vector<int>& rows_i,
 
   for (int k = 0; k < n_i; ++k) {
     double val = a0;
+    if (nm > 0 && met_i[k] >= nm) Rcpp::stop("add_U_times(): method code out of bounds.");
+    if (nt > 0 && tim_i[k] >= nt) Rcpp::stop("add_U_times(): time code out of bounds.");
     if (nm > 0 && met_i[k] >= 0) val += am[ met_i[k] ];
     if (nt > 0 && tim_i[k] >= 0) val += at[ tim_i[k] ];
     out[k] += val;

@@ -25,8 +25,8 @@ bicor_matrix_weighted_pairwise_cpp <- function(X, w, c_const = 9.0, maxPOutliers
     .Call(`_matrixCorr_bicor_matrix_weighted_pairwise_cpp`, X, w, c_const, maxPOutliers, pearson_fallback, min_n, n_threads)
 }
 
-bland_altman_cpp <- function(group1, group2, loa_multiplier = 1.96, mode = 1L, conf_level = 0.95, n_threads = 1L) {
-    .Call(`_matrixCorr_bland_altman_cpp`, group1, group2, loa_multiplier, mode, conf_level, n_threads)
+bland_altman_cpp <- function(group1, group2, loa_multiplier = 1.96, mode = 1L, conf_level = 0.95, n_threads = 1L, include_legacy_payload = TRUE) {
+    .Call(`_matrixCorr_bland_altman_cpp`, group1, group2, loa_multiplier, mode, conf_level, n_threads, include_legacy_payload)
 }
 
 ba_openmp_threads <- function() {
@@ -43,6 +43,18 @@ ba_rm_complete_pairs_cpp <- function(y, subject, method, time) {
 
 bland_altman_repeated_em_ext_cpp <- function(y, subject, method, time, include_slope = FALSE, use_ar1 = FALSE, ar1_rho = NA_real_, max_iter = 200L, tol = 1e-6, conf_level = 0.95, loa_multiplier_arg = NA_real_, use_cov_su_se = TRUE, n_threads = 1L) {
     .Call(`_matrixCorr_bland_altman_repeated_em_ext_cpp`, y, subject, method, time, include_slope, use_ar1, ar1_rho, max_iter, tol, conf_level, loa_multiplier_arg, use_cov_su_se, n_threads)
+}
+
+ccc_glmm_poisson_prepare_blocks_cpp <- function(y, subject, method_code, n_subjects) {
+    .Call(`_matrixCorr_ccc_glmm_poisson_prepare_blocks_cpp`, y, subject, method_code, n_subjects)
+}
+
+ccc_glmm_poisson_ghq_nll_blocks_cpp <- function(par, y1, y2, n1, n2, log_factorial, include_subject_method, gh_nodes, gh_weights) {
+    .Call(`_matrixCorr_ccc_glmm_poisson_ghq_nll_blocks_cpp`, par, y1, y2, n1, n2, log_factorial, include_subject_method, gh_nodes, gh_weights)
+}
+
+ccc_glmm_poisson_ghq_nll_cpp <- function(par, y, subject, method_code, n_subjects, include_subject_method, gh_nodes, gh_weights) {
+    .Call(`_matrixCorr_ccc_glmm_poisson_ghq_nll_cpp`, par, y, subject, method_code, n_subjects, include_subject_method, gh_nodes, gh_weights)
 }
 
 cccUst_rcpp <- function(y_vec, met_vec, time_vec, subj_vec, nmet0, nmet1, ntime, ns, Dmat, delta, cl) {
@@ -65,8 +77,56 @@ build_L_Dm_Z_cpp <- function(colnames_X, rmet_name, rtime_name, method_levels, t
     .Call(`_matrixCorr_build_L_Dm_Z_cpp`, colnames_X, rmet_name, rtime_name, method_levels, time_levels, has_interaction, Dmat_global, slope_mode, slope_var, method_codes, drop_zero_cols)
 }
 
-ccc_vc_cpp <- function(Xr, yr, subject, method, time, nm, nt, max_iter = 200L, tol = 1e-6, conf_level = 0.95, ci_mode = 2L, Lr = NULL, auxDr = NULL, Zr = NULL, use_ar1 = FALSE, ar1_rho = 0.0, include_subj_method = TRUE, include_subj_time = TRUE, sb_zero_tol = 1e-10, eval_single_visit = FALSE, time_weights = NULL, metric_mode = 0L) {
-    .Call(`_matrixCorr_ccc_vc_cpp`, Xr, yr, subject, method, time, nm, nt, max_iter, tol, conf_level, ci_mode, Lr, auxDr, Zr, use_ar1, ar1_rho, include_subj_method, include_subj_time, sb_zero_tol, eval_single_visit, time_weights, metric_mode)
+ccc_vc_cpp <- function(Xr, yr, subject, method, time, nm, nt, max_iter = 200L, tol = 1e-6, conf_level = 0.95, ci_mode = 2L, Lr = NULL, auxDr = NULL, Zr = NULL, use_ar1 = FALSE, ar1_rho = 0.0, include_subj_method = TRUE, include_subj_time = TRUE, sb_zero_tol = 1e-10, eval_single_visit = FALSE, time_weights = NULL, metric_mode = 0L, ll_only = FALSE, need_loglik = TRUE) {
+    .Call(`_matrixCorr_ccc_vc_cpp`, Xr, yr, subject, method, time, nm, nt, max_iter, tol, conf_level, ci_mode, Lr, auxDr, Zr, use_ar1, ar1_rho, include_subj_method, include_subj_time, sb_zero_tol, eval_single_visit, time_weights, metric_mode, ll_only, need_loglik)
+}
+
+chatterjee_xi_vec_cpp <- function(x, y, tie_method = "random", bias_correction = "none") {
+    .Call(`_matrixCorr_chatterjee_xi_vec_cpp`, x, y, tie_method, bias_correction)
+}
+
+chatterjee_xi_matrix_cpp <- function(X, tie_method = "random", bias_correction = "none", n_threads = 1L) {
+    .Call(`_matrixCorr_chatterjee_xi_matrix_cpp`, X, tie_method, bias_correction, n_threads)
+}
+
+chatterjee_xi_matrix_pairwise_cpp <- function(X_, return_ci = FALSE, conf_level = 0.95, ci_method = "auto", bootstrap_reps = 999L, m = NULL, large_sample_cutoff = 1000L, tie_method = "random", bias_correction = "none", n_threads = 1L) {
+    .Call(`_matrixCorr_chatterjee_xi_matrix_pairwise_cpp`, X_, return_ci, conf_level, ci_method, bootstrap_reps, m, large_sample_cutoff, tie_method, bias_correction, n_threads)
+}
+
+cia_moments_cpp <- function(y, subject, method, replicate, n_methods, reference_method, has_reference, pairwise, n_threads = 1L) {
+    .Call(`_matrixCorr_cia_moments_cpp`, y, subject, method, replicate, n_methods, reference_method, has_reference, pairwise, n_threads)
+}
+
+cia_pairwise_stats_cpp <- function(y, subject, method, replicate, n_methods, reference_method, has_reference, n_threads = 1L) {
+    .Call(`_matrixCorr_cia_pairwise_stats_cpp`, y, subject, method, replicate, n_methods, reference_method, has_reference, n_threads)
+}
+
+cia_pairwise_bootstrap_est_cpp <- function(y, subject, method, replicate, n_methods, reference_method, has_reference, sampled_subjects, estimator, n_threads = 1L) {
+    .Call(`_matrixCorr_cia_pairwise_bootstrap_est_cpp`, y, subject, method, replicate, n_methods, reference_method, has_reference, sampled_subjects, estimator, n_threads)
+}
+
+cia_overall_balanced_cpp <- function(y, subject, method, replicate, n_methods, reference_method, has_reference, n_threads = 1L) {
+    .Call(`_matrixCorr_cia_overall_balanced_cpp`, y, subject, method, replicate, n_methods, reference_method, has_reference, n_threads)
+}
+
+cia_rm_anova_cpp <- function(y, subject, method, time, n_subjects, n_methods, n_times, homogeneous, constrain_vc, n_threads = 1L) {
+    .Call(`_matrixCorr_cia_rm_anova_cpp`, y, subject, method, time, n_subjects, n_methods, n_times, homogeneous, constrain_vc, n_threads)
+}
+
+cia_rm_delta_cpp <- function(y, subject, method, time, n_subjects, n_methods, n_times, homogeneous, constrain_vc, conf_level, n_threads = 1L) {
+    .Call(`_matrixCorr_cia_rm_delta_cpp`, y, subject, method, time, n_subjects, n_methods, n_times, homogeneous, constrain_vc, conf_level, n_threads)
+}
+
+cohen_kappa_pair_cpp <- function(x, y, n_levels, return_inference = FALSE, conf_level = 0.95) {
+    .Call(`_matrixCorr_cohen_kappa_pair_cpp`, x, y, n_levels, return_inference, conf_level)
+}
+
+cohen_kappa_matrix_cpp <- function(X, n_levels, pairwise_complete = FALSE, return_inference = FALSE, conf_level = 0.95, n_threads = 1L) {
+    .Call(`_matrixCorr_cohen_kappa_matrix_cpp`, X, n_levels, pairwise_complete, return_inference, conf_level, n_threads)
+}
+
+cohen_kappa_threshold_triplets_cpp <- function(X, n_levels, threshold = 0.0, diag = TRUE, block_size = 256L, n_threads = 1L) {
+    .Call(`_matrixCorr_cohen_kappa_threshold_triplets_cpp`, X, n_levels, threshold, diag, block_size, n_threads)
 }
 
 ccc_cpp <- function(X) {
@@ -97,6 +157,46 @@ ustat_dcor_matrix_pairwise_cpp <- function(X, return_inference = FALSE) {
     .Call(`_matrixCorr_ustat_dcor_matrix_pairwise_cpp`, X, return_inference)
 }
 
+robust_dcor_matrix_cpp <- function(X, c_const = 4.0, n_threads = 1L) {
+    .Call(`_matrixCorr_robust_dcor_matrix_cpp`, X, c_const, n_threads)
+}
+
+robust_dcor_matrix_pairwise_cpp <- function(X, c_const = 4.0, return_inference = FALSE, n_perm = 999L, seed = NULL, n_threads = 1L) {
+    .Call(`_matrixCorr_robust_dcor_matrix_pairwise_cpp`, X, c_const, return_inference, n_perm, seed, n_threads)
+}
+
+gwet_ac_pair_cpp <- function(x, y, weights, drop_unused_levels = FALSE, return_inference = FALSE, conf_level = 0.95) {
+    .Call(`_matrixCorr_gwet_ac_pair_cpp`, x, y, weights, drop_unused_levels, return_inference, conf_level)
+}
+
+gwet_ac_matrix_cpp <- function(X, weights, drop_unused_levels = FALSE, pairwise_complete = FALSE, return_inference = FALSE, conf_level = 0.95, n_threads = 1L) {
+    .Call(`_matrixCorr_gwet_ac_matrix_cpp`, X, weights, drop_unused_levels, pairwise_complete, return_inference, conf_level, n_threads)
+}
+
+gwet_ac_threshold_triplets_cpp <- function(X, weights, drop_unused_levels = FALSE, threshold = 0.0, diag = TRUE, block_size = 256L, n_threads = 1L) {
+    .Call(`_matrixCorr_gwet_ac_threshold_triplets_cpp`, X, weights, drop_unused_levels, threshold, diag, block_size, n_threads)
+}
+
+gwet_ac_counts_cpp <- function(counts, weights, by_category = FALSE, inference_code = 0L, conf_level = 0.95, n_threads = 1L) {
+    .Call(`_matrixCorr_gwet_ac_counts_cpp`, counts, weights, by_category, inference_code, conf_level, n_threads)
+}
+
+gwet_ac_ratings_cpp <- function(ratings, n_levels, weights, na_code = 1L, min_raters = 2L, by_category = FALSE, inference_code = 0L, conf_level = 0.95, n_threads = 1L) {
+    .Call(`_matrixCorr_gwet_ac_ratings_cpp`, ratings, n_levels, weights, na_code, min_raters, by_category, inference_code, conf_level, n_threads)
+}
+
+hsic_matrix_cpp <- function(X, kernel_code, bandwidth_code, normalise, estimator_code) {
+    .Call(`_matrixCorr_hsic_matrix_cpp`, X, kernel_code, bandwidth_code, normalise, estimator_code)
+}
+
+hsic_raw_biased_matrix_object_cpp <- function(X, kernel_code, bandwidth_code, kernel, bandwidth, names) {
+    .Call(`_matrixCorr_hsic_raw_biased_matrix_object_cpp`, X, kernel_code, bandwidth_code, kernel, bandwidth, names)
+}
+
+hsic_matrix_pairwise_cpp <- function(X, kernel_code, bandwidth_code, normalise, estimator_code, return_inference, B, seed = NULL) {
+    .Call(`_matrixCorr_hsic_matrix_pairwise_cpp`, X, kernel_code, bandwidth_code, normalise, estimator_code, return_inference, B, seed)
+}
+
 icc_matrix_cpp <- function(X, form_code = 0L, average_unit = FALSE, pairwise_complete = FALSE, return_ci = FALSE, conf_level = 0.95, n_threads = 1L) {
     .Call(`_matrixCorr_icc_matrix_cpp`, X, form_code, average_unit, pairwise_complete, return_ci, conf_level, n_threads)
 }
@@ -121,6 +221,18 @@ kendall_matrix_pairwise_cpp <- function(X_, return_ci = FALSE, conf_level = 0.95
     .Call(`_matrixCorr_kendall_matrix_pairwise_cpp`, X_, return_ci, conf_level, ci_method)
 }
 
+krippendorff_alpha_core_cpp <- function(counts, delta2, method_code = 1L, return_matrices = FALSE, n_threads = 1L) {
+    .Call(`_matrixCorr_krippendorff_alpha_core_cpp`, counts, delta2, method_code, return_matrices, n_threads)
+}
+
+multirater_kappa_counts_cpp <- function(counts, method_code = 1L, by_category = FALSE, inference_code = 0L, conf_level = 0.95, n_threads = 1L) {
+    .Call(`_matrixCorr_multirater_kappa_counts_cpp`, counts, method_code, by_category, inference_code, conf_level, n_threads)
+}
+
+multirater_kappa_ratings_cpp <- function(ratings, n_levels, method_code = 1L, na_code = 1L, min_raters = 2L, by_category = FALSE, inference_code = 0L, conf_level = 0.95, n_threads = 1L, exact = FALSE) {
+    .Call(`_matrixCorr_multirater_kappa_ratings_cpp`, ratings, n_levels, method_code, na_code, min_raters, by_category, inference_code, conf_level, n_threads, exact)
+}
+
 partial_correlation_cpp <- function(X_, method = "sample", lambda = 1e-3, return_cov_precision = TRUE, return_p_value = FALSE) {
     .Call(`_matrixCorr_partial_correlation_cpp`, X_, method, lambda, return_cov_precision, return_p_value)
 }
@@ -137,12 +249,24 @@ pearson_matrix_pairwise_cpp <- function(X_, return_ci = FALSE, conf_level = 0.95
     .Call(`_matrixCorr_pearson_matrix_pairwise_cpp`, X_, return_ci, conf_level)
 }
 
+prob_agree_fit_cpp <- function(response, predictor, group, eval_predictor, link_code, lower, upper, ci, ci_method, conf_level, max_iter, tol) {
+    .Call(`_matrixCorr_prob_agree_fit_cpp`, response, predictor, group, eval_predictor, link_code, lower, upper, ci, ci_method, conf_level, max_iter, tol)
+}
+
 rmcorr_pair_cpp <- function(x, y, subject, conf_level = 0.95) {
     .Call(`_matrixCorr_rmcorr_pair_cpp`, x, y, subject, conf_level)
 }
 
+rmcorr_pair_weighted_cpp <- function(x, y, subject, conf_level = 0.95) {
+    .Call(`_matrixCorr_rmcorr_pair_weighted_cpp`, x, y, subject, conf_level)
+}
+
 rmcorr_matrix_cpp <- function(x, y, subject, symmetric = FALSE, conf_level = 0.95, n_threads = 1L) {
     .Call(`_matrixCorr_rmcorr_matrix_cpp`, x, y, subject, symmetric, conf_level, n_threads)
+}
+
+rmcorr_matrix_weighted_cpp <- function(x, y, subject, symmetric = FALSE, conf_level = 0.95, n_threads = 1L) {
+    .Call(`_matrixCorr_rmcorr_matrix_weighted_cpp`, x, y, subject, symmetric, conf_level, n_threads)
 }
 
 pbcor_matrix_cpp <- function(X, beta = 0.2, n_threads = 1L) {
@@ -243,5 +367,21 @@ matrixCorr_polydi_mle_cpp <- function(tab, correct = 0.5) {
 
 validate_corr_input_cpp <- function(data, check_na = TRUE) {
     .Call(`_matrixCorr_validate_corr_input_cpp`, data, check_na)
+}
+
+complete_case_matrix_cpp <- function(x) {
+    .Call(`_matrixCorr_complete_case_matrix_cpp`, x)
+}
+
+weighted_kappa_pair_cpp <- function(x, y, weights, return_inference = FALSE, conf_level = 0.95) {
+    .Call(`_matrixCorr_weighted_kappa_pair_cpp`, x, y, weights, return_inference, conf_level)
+}
+
+weighted_kappa_matrix_cpp <- function(X, weights, pairwise_complete = FALSE, return_inference = FALSE, conf_level = 0.95, n_threads = 1L) {
+    .Call(`_matrixCorr_weighted_kappa_matrix_cpp`, X, weights, pairwise_complete, return_inference, conf_level, n_threads)
+}
+
+weighted_kappa_threshold_triplets_cpp <- function(X, weights, threshold = 0.0, diag = TRUE, block_size = 256L, n_threads = 1L) {
+    .Call(`_matrixCorr_weighted_kappa_threshold_triplets_cpp`, X, weights, threshold, diag, block_size, n_threads)
 }
 

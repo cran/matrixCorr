@@ -426,6 +426,9 @@
 #'   include_slope = FALSE, use_ar1 = FALSE
 #' )
 #' summary(ba4)
+#' estimate(ba4)
+#' tidy(ba4)
+#' confint(ba4)
 #' plot(ba4)
 #'
 #' # -------- Simulate repeated-measures with AR(1) data --------
@@ -479,6 +482,7 @@
 #' # Matrices (row - column orientation)
 #' print(baN)
 #' summary(baN)
+#' tidy(baN)
 #'
 #' # Faceted BA scatter by pair
 #' plot(baN, smoother = "lm", facet_scales = "free_y")
@@ -623,8 +627,12 @@ ba_rm <- function(data = NULL, response, subject, method, time,
   check_bool(include_slope, arg = "include_slope")
   check_bool(use_ar1, arg = "use_ar1")
   check_bool(verbose, arg = "verbose")
-  prev_threads <- get_omp_threads()
-  on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
+  prev_threads <- .mc_prepare_omp_threads(
+    n_threads
+  )
+  if (!is.null(prev_threads)) {
+    on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+  }
   if (isTRUE(use_ar1)) {
     if (!is.na(ar1_rho)) {
       ar1_rho <- check_ar1_rho(ar1_rho, arg = "ar1_rho", bound = 0.999)
@@ -634,7 +642,7 @@ ba_rm <- function(data = NULL, response, subject, method, time,
   }
 
   if (isTRUE(verbose)) {
-    cat("Using", n_threads, "OpenMP threads\n")
+    cli::cli_inform("Using {n_threads} OpenMP thread{?s}.")
   }
 
   # ---- two-method path -------------------------------------------------------
@@ -655,12 +663,25 @@ ba_rm <- function(data = NULL, response, subject, method, time,
 
   # ---- N-method pairwise path ------------------------------------------------
   if (isTRUE(verbose)) {
-    cat("Repeated BA (pairwise):", length(mlev), "methods ->",
-        choose(length(mlev), 2L), "pairs\n")
+    cli::cli_inform(
+      "Repeated BA (pairwise): {length(mlev)} methods -> {choose(length(mlev), 2L)} pairs."
+    )
   }
 
   methods <- mlev
   mm <- length(methods)
+  valid_common <- is.finite(y) & !is.na(s) & !is.na(t) & !is.na(m)
+  y_valid <- y[valid_common]
+  s_valid <- s[valid_common]
+  t_valid <- t[valid_common]
+  m_valid <- m[valid_common]
+  method_code <- as.integer(m_valid)
+  idx_split <- split(seq_along(method_code), method_code)
+  idx_by_method <- vector("list", mm)
+  for (idx in seq_len(mm)) {
+    hit <- idx_split[[as.character(idx)]]
+    idx_by_method[[idx]] <- if (is.null(hit)) integer(0L) else hit
+  }
 
   bias         <- .make_named_matrix_ba(methods)
   sd_loa       <- .make_named_matrix_ba(methods)
@@ -703,13 +724,33 @@ ba_rm <- function(data = NULL, response, subject, method, time,
 
   for (j in 1:(mm - 1L)) for (k in (j + 1L):mm) {
     lev_j <- methods[j]; lev_k <- methods[k]
-    sel <- m %in% c(lev_j, lev_k) & is.finite(y) & !is.na(s) & !is.na(t)
-    if (!any(sel)) next
-    m12 <- ifelse(m[sel] == lev_j, 1L, 2L)
-    n_pair <- .count_ba_rm_complete_pairs(y[sel], s[sel], m12, t[sel])
-    n_mat[j,k] <- n_mat[k,j] <- n_pair
+    idx_j <- idx_by_method[[j]]
+    idx_k <- idx_by_method[[k]]
+    if (!length(idx_j) && !length(idx_k)) next
+    idx_pair <- sort.int(c(idx_j, idx_k), method = "radix")
+    pair_y <- y_valid[idx_pair]
+    pair_s <- s_valid[idx_pair]
+    pair_t <- t_valid[idx_pair]
+    pair_m12 <- as.integer(method_code[idx_pair] == k) + 1L
 
-    if (n_pair < 2L) {
+    pair_label <- paste(lev_j, lev_k, sep = "-")
+    fit_info <- tryCatch(
+      .fit_ba_rm_pair_model(
+        response = pair_y, subject = pair_s, method12 = pair_m12, time = pair_t,
+        n_threads = n_threads,
+        include_slope = include_slope, use_ar1 = use_ar1, ar1_rho = ar1_rho,
+        max_iter = max_iter, tol = tol, conf_level = conf_level,
+        loa_multiplier = loa_multiplier, pair_label = pair_label
+      ),
+      error = identity
+    )
+
+    if (inherits(fit_info, "error")) {
+      n_pair <- .count_ba_rm_complete_pairs(pair_y, pair_s, pair_m12, pair_t)
+      n_mat[j,k] <- n_mat[k,j] <- n_pair
+      if (n_pair >= 2L) {
+        .mc_abort_condition(fit_info)
+      }
       bias[j,k]      <- bias[k,j]      <- NA_real_
       sd_loa[j,k]    <- sd_loa[k,j]    <- NA_real_
       loa_lower[j,k] <- loa_lower[k,j] <- NA_real_
@@ -742,15 +783,41 @@ ba_rm <- function(data = NULL, response, subject, method, time,
       next
     }
 
-    pair_label <- paste(lev_j, lev_k, sep = "-")
-    fit_info <- .fit_ba_rm_pair_model(
-      response = y[sel], subject = s[sel], method12 = m12, time = t[sel],
-      n_threads = n_threads,
-      include_slope = include_slope, use_ar1 = use_ar1, ar1_rho = ar1_rho,
-      max_iter = max_iter, tol = tol, conf_level = conf_level,
-      loa_multiplier = loa_multiplier, pair_label = pair_label
-    )
     fit <- fit_info$fit
+    n_pair <- as.integer(fit$n_pairs)
+    n_mat[j,k] <- n_mat[k,j] <- n_pair
+    if (n_pair < 2L) {
+      bias[j,k]      <- bias[k,j]      <- NA_real_
+      sd_loa[j,k]    <- sd_loa[k,j]    <- NA_real_
+      loa_lower[j,k] <- loa_lower[k,j] <- NA_real_
+      loa_upper[j,k] <- loa_upper[k,j] <- NA_real_
+      width[j,k]     <- width[k,j]     <- NA_real_
+
+      mean_ci_low[j,k]  <- mean_ci_low[k,j]   <- NA_real_
+      mean_ci_high[j,k] <- mean_ci_high[k,j]  <- NA_real_
+      lo_ci_low[j,k]    <- lo_ci_low[k,j]     <- NA_real_
+      lo_ci_high[j,k]   <- lo_ci_high[k,j]    <- NA_real_
+      hi_ci_low[j,k]    <- hi_ci_low[k,j]     <- NA_real_
+      hi_ci_high[j,k]   <- hi_ci_high[k,j]    <- NA_real_
+
+      vc_subject[j,k] <- vc_subject[k,j] <- NA_real_
+      vc_resid[j,k]   <- vc_resid[k,j]   <- NA_real_
+      residual_model[j,k] <- residual_model[k,j] <- NA_character_
+
+      if (!is.null(slope_mat)) {
+        slope_mat[j,k] <- slope_mat[k,j] <- NA_real_
+      }
+      if (isTRUE(use_ar1)) {
+        ar1_rho_mat[j,k] <- ar1_rho_mat[k,j] <- NA_real_
+        ar1_estimated[j,k] <- ar1_estimated[k,j] <- NA
+      }
+
+      inform_if_verbose(
+        "Skipping Bland-Altman pair {.val {lev_j}} vs {.val {lev_k}}: need at least 2 complete subject-time pairs (found {n_pair}).",
+        .verbose = verbose
+      )
+      next
+    }
     comp <- .recompose_pair(fit)
 
     bias[j,k]      <- comp$md;  bias[k,j]      <- -comp$md
@@ -786,8 +853,9 @@ ba_rm <- function(data = NULL, response, subject, method, time,
     }
 
     if (isTRUE(verbose)) {
-      cat(sprintf(" pair %s - %s: n=%d, bias=%.4f, sd=%.4f\n",
-                  lev_j, lev_k, as.integer(fit$n_pairs), comp$md, comp$sd))
+      cli::cli_inform(
+        "Pair {.val {lev_j}} - {.val {lev_k}}: n={as.integer(fit$n_pairs)}, bias={format(round(comp$md, 4), nsmall = 4)}, sd={format(round(comp$sd, 4), nsmall = 4)}."
+      )
     }
   }
 
@@ -850,12 +918,8 @@ ba_rm <- function(data = NULL, response, subject, method, time,
     " for this fit"
   }
 
-  warning(
-    sprintf(
-      "Requested AR(1) residual structure could not be fit%s; using iid residuals instead.",
-      where
-    ),
-    call. = FALSE
+  cli::cli_warn(
+    "Requested AR(1) residual structure could not be fit{where}; using iid residuals instead."
   )
 }
 
@@ -899,7 +963,7 @@ ba_rm <- function(data = NULL, response, subject, method, time,
   }
 
   if (!.ba_rm_is_ar1_convergence_failure(fit_ar1)) {
-    stop(fit_ar1)
+    .mc_abort_condition(fit_ar1)
   }
 
   fit_iid <- tryCatch(
@@ -907,7 +971,7 @@ ba_rm <- function(data = NULL, response, subject, method, time,
     error = identity
   )
   if (inherits(fit_iid, "error")) {
-    stop(fit_iid)
+    .mc_abort_condition(fit_iid)
   }
 
   list(
@@ -925,23 +989,34 @@ ba_rm <- function(data = NULL, response, subject, method, time,
 .ba_rep_two_methods <- function(response, subject, method12, time,
                                 loa_multiplier, conf_level, n_threads, include_slope,
                                 use_ar1, ar1_rho, max_iter, tol) {
-  n_pairs <- .count_ba_rm_complete_pairs(response, subject, method12, time)
+  fit_info <- tryCatch(
+    .fit_ba_rm_pair_model(
+      response = response, subject = subject, method12 = method12, time = time,
+      n_threads = n_threads,
+      include_slope = include_slope, use_ar1 = use_ar1, ar1_rho = ar1_rho,
+      max_iter = max_iter, tol = tol, conf_level = conf_level,
+      loa_multiplier = loa_multiplier
+    ),
+    error = identity
+  )
+  if (inherits(fit_info, "error")) {
+    n_pairs <- .count_ba_rm_complete_pairs(response, subject, method12, time)
+    if (n_pairs < 2L) {
+      abort_bad_arg("response",
+        message = "must provide at least two subject-time matched pairs after removing missing observations; only {n_pairs} available.",
+        n_pairs = n_pairs
+      )
+    }
+    .mc_abort_condition(fit_info)
+  }
+  fit <- fit_info$fit
+  n_pairs <- as.integer(fit$n_pairs)
   if (n_pairs < 2L) {
     abort_bad_arg("response",
       message = "must provide at least two subject-time matched pairs after removing missing observations; only {n_pairs} available.",
       n_pairs = n_pairs
     )
   }
-
-  fit_info <- .fit_ba_rm_pair_model(
-    response = response, subject = subject, method12 = method12, time = time,
-    n_threads = n_threads,
-    include_slope = include_slope, use_ar1 = use_ar1, ar1_rho = ar1_rho,
-    max_iter = max_iter, tol = tol, conf_level = conf_level,
-    loa_multiplier = loa_multiplier
-  )
-  fit <- fit_info$fit
-  n_pairs <- as.integer(fit$n_pairs)
 
   md  <- as.numeric(fit$bias_mu0)
   sdL <- as.numeric(fit$sd_loa)
@@ -1130,11 +1205,8 @@ print.ba_repeated_matrix <- function(x,
   }
 
   sm <- summary(x, digits = digits, ci_digits = ci_digits)
-  cols <- c("method1", "method2", "bias", "sd_loa", "loa_low", "loa_up", "width", "n")
+  cols <- c("method1", "method2", "bias", "sd_loa", "loa_low", "loa_up", "width", "n_obs")
   if ("slope" %in% names(sm)) cols <- c(cols, "slope")
-  if (identical(show_ci, "yes") && has_ci) {
-    cols <- c(cols, "bias_lwr", "bias_upr", "lo_lwr", "lo_upr", "up_lwr", "up_upr")
-  }
   df <- as.data.frame(sm)[, cols[cols %in% names(sm)], drop = FALSE]
 
   header <- .mc_header_with_ci("Bland-Altman (row \u2212 column)", cl, if (has_ci) show_ci else "no")
@@ -1285,7 +1357,7 @@ summary.ba_repeated_matrix <- function(object,
     sections = list(
       list(
         title = "Agreement estimates",
-        cols = c("item1", "item2", "n_obs", "bias", "sd_loa",
+        cols = c("method1", "method2", "n_obs", "bias", "sd_loa",
                  "loa_low", "loa_up", "width", "slope")
       ),
       list(
@@ -1317,7 +1389,7 @@ print.summary.ba_repeated <- function(x, digits = NULL, n = NULL,
     sections = list(
       list(
         title = "Agreement estimates",
-        cols = c("item1", "item2", "n_obs", "bias", "sd_loa",
+        cols = c("method1", "method2", "n_obs", "bias", "sd_loa",
                  "loa_low", "loa_up", "width", "slope")
       ),
       list(
@@ -1355,7 +1427,7 @@ print.summary.ba_repeated_matrix <- function(x, digits = NULL, n = NULL,
     sections = list(
       list(
         title = "Agreement estimates",
-        cols = c("item1", "item2", "n_obs", "bias", "sd_loa",
+        cols = c("method1", "method2", "n_obs", "bias", "sd_loa",
                  "loa_low", "loa_up", "width", "slope")
       ),
       list(

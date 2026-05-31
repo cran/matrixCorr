@@ -10,6 +10,11 @@
 #' @importFrom rlang is_bool is_scalar_integerish is_scalar_character arg_match
 NULL
 
+#' Null-coalescing helper
+#' @keywords internal
+#' @noRd
+`%||%` <- function(a, b) if (!is.null(a)) a else b
+
 #' Abort for internal errors (should not happen)
 #' @keywords internal
 abort_internal <- function(message, ...,
@@ -18,6 +23,19 @@ abort_internal <- function(message, ...,
     message,
     ...,
     class = c(.class, "matrixCorr_error", "matrixCorr_internal_error")
+  )
+}
+
+#' Rethrow a caught condition as a cli error
+#' @keywords internal
+.mc_abort_condition <- function(cnd,
+                                .class = character()) {
+  msg <- conditionMessage(cnd)
+  cli::cli_abort(
+    "{msg}",
+    msg = msg,
+    parent = cnd,
+    class = c(.class, "matrixCorr_error", "matrixCorr_backend_error")
   )
 }
 
@@ -345,19 +363,21 @@ match_arg <- function(arg,
 #' @keywords internal
 #' @noRd
 validate_na_method <- function(na_method,
-                               arg = as.character(substitute(na_method))) {
+                               arg = as.character(substitute(na_method)),
+                               allowed = c("error", "pairwise")) {
   if (is.logical(na_method) && length(na_method) == 1L && !is.na(na_method)) {
-    return(if (isTRUE(na_method)) "error" else "pairwise")
+    resolved <- if (isTRUE(na_method)) "error" else "pairwise"
+    if (resolved %in% allowed) return(resolved)
   }
   if (is.character(na_method) &&
       length(na_method) == 1L &&
       !is.na(na_method) &&
-      (identical(na_method, "error") || identical(na_method, "pairwise"))) {
+      (na_method %in% allowed)) {
     return(na_method)
   }
   match_arg(
     na_method,
-    values = c("error", "pairwise"),
+    values = allowed,
     arg_name = arg
   )
 }
@@ -370,11 +390,14 @@ resolve_na_args <- function(na_method = "error",
                             na_method_missing = FALSE,
                             arg_na_method = "na_method",
                             arg_check_na = "check_na",
+                            allowed = c("error", "pairwise"),
                             warn = TRUE) {
+  allowed <- match.arg(allowed, c("error", "pairwise", "complete"), several.ok = TRUE)
   if (is.null(check_na) && isTRUE(na_method_missing)) {
     return(list(
       na_method = "error",
-      check_na = TRUE
+      check_na = TRUE,
+      common_sample = TRUE
     ))
   }
   if (!is.null(check_na)) {
@@ -398,9 +421,13 @@ resolve_na_args <- function(na_method = "error",
       )
     }
     resolved <- if (isTRUE(check_na)) "error" else "pairwise"
+    if (!resolved %in% allowed) {
+      resolved <- "error"
+    }
     return(list(
       na_method = resolved,
-      check_na = identical(resolved, "error")
+      check_na = identical(resolved, "error"),
+      common_sample = !identical(resolved, "pairwise")
     ))
   }
 
@@ -418,11 +445,57 @@ resolve_na_args <- function(na_method = "error",
     }
   }
 
-  resolved <- validate_na_method(na_method, arg = arg_na_method)
+  resolved <- validate_na_method(na_method, arg = arg_na_method, allowed = allowed)
   list(
     na_method = resolved,
-    check_na = identical(resolved, "error")
+    check_na = identical(resolved, "error"),
+    common_sample = !identical(resolved, "pairwise")
   )
+}
+
+#' Apply listwise finite-row deletion for na_method = "complete"
+#' @keywords internal
+#' @noRd
+.mc_complete_case_matrix <- function(x,
+                                     min_n = 2L,
+                                     arg = "data") {
+  x <- as.matrix(x)
+  min_n <- as.integer(min_n)
+  filtered <- complete_case_matrix_cpp(x)
+  keep <- filtered$complete_rows
+
+  n_original <- filtered$n_original
+  n_complete <- filtered$n_complete
+
+  if (n_complete < min_n) {
+    abort_bad_arg(
+      arg,
+      message = "must retain at least {min_n} complete rows when {.arg na_method} is {.val complete}; retained {n_complete}.",
+      min_n = min_n,
+      n_complete = n_complete
+    )
+  }
+
+  list(
+    data = filtered$data,
+    diagnostics = list(
+      na_method = "complete",
+      n_original = n_original,
+      n_complete = n_complete,
+      n_removed = n_original - n_complete,
+      complete_rows = keep,
+      common_sample = TRUE
+    )
+  )
+}
+
+#' Merge correlation diagnostics
+#' @keywords internal
+#' @noRd
+.mc_merge_diagnostics <- function(x, y) {
+  if (is.null(x)) return(y)
+  if (is.null(y)) return(x)
+  utils::modifyList(x, y)
 }
 
 #' Set OpenMP threads only when a change is required
@@ -452,12 +525,7 @@ resolve_na_args <- function(na_method = "error",
 #' @keywords internal
 #' @noRd
 .mc_prepare_omp_threads <- function(n_threads,
-                                    n_threads_missing = FALSE,
                                     arg = "n_threads") {
-  if (isTRUE(n_threads_missing) &&
-      identical(getOption("matrixCorr.threads", 1L), 1L)) {
-    return(NULL)
-  }
   .mc_enter_omp_threads(check_scalar_int_pos(n_threads, arg = arg))
 }
 
@@ -562,10 +630,18 @@ resolve_na_args <- function(na_method = "error",
                                                weighted = FALSE,
                                                ...) {
   method <- tolower(as.character(method %||% ""))
-  if (!method %in% c("pearson", "spearman", "ccc", "bicor", "pbcor", "wincor")) {
+  if (!method %in% c("pearson", "spearman", "ccc", "bicor", "pbcor", "wincor", "cohen_kappa", "weighted_kappa")) {
     return(FALSE)
   }
-  if (!identical(na_method, "error")) {
+  if (identical(method, "cohen_kappa")) {
+    if (!na_method %in% c("error", "complete")) {
+      return(FALSE)
+    }
+  } else if (identical(method, "weighted_kappa")) {
+    if (!identical(na_method, "error")) {
+      return(FALSE)
+    }
+  } else if (!identical(na_method, "error")) {
     return(FALSE)
   }
   if (!identical(output, "sparse") && !identical(output, "edge_list")) {
@@ -595,7 +671,7 @@ resolve_na_args <- function(na_method = "error",
     return(default)
   }
   skip <- c(
-    "corr_matrix", "corr_sparse", "corr_packed_upper", "corr_edge_list",
+    "corr_matrix", "corr_sparse", "corr_edge_list",
     "corr_result", "matrix", "array", "data.frame", "list",
     "sparseMatrix", "Matrix", "mMatrix", "dMatrix", "symmetricMatrix",
     "CsparseMatrix", "dsparseMatrix", "dCsparseMatrix", "generalMatrix"
@@ -731,43 +807,6 @@ resolve_na_args <- function(na_method = "error",
   .mc_set_attrs(out, extra_attrs)
 }
 
-#' New packed-upper correlation result
-#' @keywords internal
-#' @noRd
-.mc_new_corr_packed_upper <- function(df,
-                                      estimator_class,
-                                      method,
-                                      description,
-                                      threshold = 0,
-                                      diag = TRUE,
-                                      diagnostics = NULL,
-                                      ci = NULL,
-                                      conf.level = NULL,
-                                      source_dim = NULL,
-                                      source_dimnames = NULL,
-                                      symmetric = TRUE,
-                                      package_name = "matrixCorr",
-                                      extra_attrs = list()) {
-  out <- data.frame(df, stringsAsFactors = FALSE, check.names = FALSE)
-  class(out) <- c("corr_packed_upper", estimator_class, "corr_result", "data.frame")
-  attr(out, "method") <- method
-  attr(out, "description") <- description
-  attr(out, "package") <- package_name
-  attr(out, "output") <- "packed_upper"
-  attr(out, "threshold") <- as.numeric(threshold)
-  attr(out, "diag") <- isTRUE(diag)
-  attr(out, "diagnostics") <- diagnostics
-  attr(out, "ci") <- ci
-  attr(out, "conf.level") <- conf.level
-  attr(out, "corr_result") <- TRUE
-  attr(out, "corr_output_class") <- "corr_packed_upper"
-  attr(out, "corr_estimator_class") <- estimator_class
-  attr(out, "corr_dim") <- as.integer(source_dim %||% c(NA_integer_, NA_integer_))
-  attr(out, "corr_dimnames") <- source_dimnames
-  attr(out, "corr_symmetric") <- isTRUE(symmetric)
-  .mc_set_attrs(out, extra_attrs)
-}
-
 #' New edge-list correlation result
 #' @keywords internal
 #' @noRd
@@ -786,6 +825,25 @@ resolve_na_args <- function(na_method = "error",
                                    package_name = "matrixCorr",
                                    extra_attrs = list()) {
   out <- data.frame(df, stringsAsFactors = FALSE, check.names = FALSE)
+  if (!all(c("row", "col", "value") %in% names(out)) &&
+      all(c("i", "j", "x") %in% names(out))) {
+    dn <- source_dimnames
+    ii <- as.integer(out$i)
+    jj <- as.integer(out$j)
+    rn <- if (is.list(dn) && length(dn) == 2L) dn[[1L]] else NULL
+    cn <- if (is.list(dn) && length(dn) == 2L) dn[[2L]] else NULL
+    out <- data.frame(
+      row = if (is.null(rn)) as.character(ii) else rn[ii],
+      col = if (is.null(cn)) as.character(jj) else cn[jj],
+      value = as.numeric(out$x),
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  }
+  if (!all(c("row", "col", "value") %in% names(out))) {
+    abort_bad_arg("df", message = "must contain columns `row`, `col`, and `value`.")
+  }
+  out <- out[, c("row", "col", "value"), drop = FALSE]
   class(out) <- c("corr_edge_list", estimator_class, "corr_result", "data.frame")
   attr(out, "method") <- method
   attr(out, "description") <- description
@@ -843,16 +901,27 @@ resolve_na_args <- function(na_method = "error",
   out
 }
 
-#' Convert C++ triplets to internal edge-list payload
+#' Convert C++ triplets to public edge-list payload
 #' @keywords internal
 #' @noRd
-.mc_triplets_to_edge_list <- function(triplets) {
+.mc_triplets_to_edge_list <- function(triplets,
+                                      dimnames = NULL) {
   check_same_length(triplets$i, triplets$j, arg_x = "triplets$i", arg_y = "triplets$j")
   check_same_length(triplets$i, triplets$x, arg_x = "triplets$i", arg_y = "triplets$x")
+  ii <- as.integer(triplets$i)
+  jj <- as.integer(triplets$j)
+
+  rn <- NULL
+  cn <- NULL
+  if (is.list(dimnames) && length(dimnames) == 2L) {
+    rn <- dimnames[[1L]]
+    cn <- dimnames[[2L]]
+  }
+
   data.frame(
-    i = as.integer(triplets$i),
-    j = as.integer(triplets$j),
-    x = as.numeric(triplets$x),
+    row = if (is.null(rn)) as.character(ii) else rn[ii],
+    col = if (is.null(cn)) as.character(jj) else cn[jj],
+    value = as.numeric(triplets$x),
     stringsAsFactors = FALSE,
     check.names = FALSE
   )
@@ -913,7 +982,7 @@ resolve_na_args <- function(na_method = "error",
   }
 
   out <- .mc_new_corr_edge_list(
-    df = .mc_triplets_to_edge_list(triplets),
+    df = .mc_triplets_to_edge_list(triplets, dimnames = source_dimnames),
     estimator_class = estimator_class,
     method = method,
     description = description,
@@ -937,7 +1006,8 @@ resolve_na_args <- function(na_method = "error",
 #' @noRd
 .mc_matrix_to_edge_list <- function(mat,
                                     threshold = 0,
-                                    diag = TRUE) {
+                                    diag = TRUE,
+                                    symmetric = NULL) {
   check_matrix_dims(mat, arg = "mat")
   check_scalar_numeric(threshold, arg = "threshold", lower = 0, closed_lower = TRUE)
   check_bool(diag, arg = "diag")
@@ -954,9 +1024,15 @@ resolve_na_args <- function(na_method = "error",
 
   same_dimnames <- isTRUE(identical(rownames(mat), colnames(mat))) ||
     (is.null(rownames(mat)) && is.null(colnames(mat)))
-  use_upper <- isTRUE(nrow(mat) == ncol(mat)) &&
-    same_dimnames &&
-    isTRUE(isSymmetric(mat, check.attributes = FALSE))
+  use_upper <- if (is.null(symmetric)) {
+    isTRUE(nrow(mat) == ncol(mat)) &&
+      same_dimnames &&
+      isTRUE(isSymmetric(mat, check.attributes = FALSE))
+  } else {
+    isTRUE(symmetric) &&
+      isTRUE(nrow(mat) == ncol(mat)) &&
+      same_dimnames
+  }
   if (use_upper) {
     idx <- upper.tri(mat, diag = isTRUE(diag))
   } else {
@@ -985,21 +1061,13 @@ resolve_na_args <- function(na_method = "error",
   )
 }
 
-#' Convert a symmetric matrix to packed upper-triangle records
-#' @keywords internal
-#' @noRd
-.mc_matrix_to_packed_upper <- function(mat,
-                                       threshold = 0,
-                                       diag = TRUE) {
-  .mc_matrix_to_edge_list(mat, threshold = threshold, diag = diag)
-}
-
 #' Convert a symmetric matrix to thresholded sparse matrix
 #' @keywords internal
 #' @noRd
 .mc_matrix_to_sparse_thresholded <- function(mat,
                                              threshold = 0,
-                                             diag = TRUE) {
+                                             diag = TRUE,
+                                             symmetric = NULL) {
   check_matrix_dims(mat, arg = "mat")
   check_scalar_numeric(threshold, arg = "threshold", lower = 0, closed_lower = TRUE)
   check_bool(diag, arg = "diag")
@@ -1007,9 +1075,15 @@ resolve_na_args <- function(na_method = "error",
   dn <- dimnames(mat)
   same_dimnames <- isTRUE(identical(rownames(mat), colnames(mat))) ||
     (is.null(rownames(mat)) && is.null(colnames(mat)))
-  use_upper <- isTRUE(nrow(mat) == ncol(mat)) &&
-    same_dimnames &&
-    isTRUE(isSymmetric(mat, check.attributes = FALSE))
+  use_upper <- if (is.null(symmetric)) {
+    isTRUE(nrow(mat) == ncol(mat)) &&
+      same_dimnames &&
+      isTRUE(isSymmetric(mat, check.attributes = FALSE))
+  } else {
+    isTRUE(symmetric) &&
+      isTRUE(nrow(mat) == ncol(mat)) &&
+      same_dimnames
+  }
   if (use_upper) {
     idx <- upper.tri(mat, diag = isTRUE(diag))
   } else {
@@ -1037,6 +1111,30 @@ resolve_na_args <- function(na_method = "error",
   out
 }
 
+#' Fast route for already-validated output routing
+#' @keywords internal
+#' @noRd
+.mc_finalize_corr_output_fast <- function(x,
+                                          output = "matrix",
+                                          threshold = 0,
+                                          diag = TRUE) {
+  if (identical(output, "matrix") &&
+    isTRUE(is.finite(threshold)) && isTRUE(as.numeric(threshold) == 0) &&
+    isTRUE(diag) &&
+    inherits(x, "corr_matrix")) {
+    attr(x, "output") <- "matrix"
+    attr(x, "threshold") <- 0
+    attr(x, "diag") <- TRUE
+    return(x)
+  }
+  .mc_finalize_corr_output(
+    x = x,
+    output = output,
+    threshold = threshold,
+    diag = diag
+  )
+}
+
 #' Route a computed correlation matrix object to requested output shape
 #' @keywords internal
 #' @noRd
@@ -1044,7 +1142,27 @@ resolve_na_args <- function(na_method = "error",
                                      output = c("matrix", "sparse", "edge_list"),
                                      threshold = 0,
                                      diag = TRUE) {
+  if (inherits(x, "corr_matrix") &&
+    is.character(output) &&
+    length(output) == 1L &&
+    identical(output, "matrix") &&
+    is.numeric(threshold) &&
+    length(threshold) == 1L &&
+    !is.na(threshold) &&
+    as.numeric(threshold) == 0 &&
+    isTRUE(diag)) {
+    attr(x, "output") <- "matrix"
+    attr(x, "threshold") <- 0
+    attr(x, "diag") <- TRUE
+    return(x)
+  }
   cfg <- .mc_validate_output_args(output = output, threshold = threshold, diag = diag)
+  if (identical(cfg$output, "matrix") && inherits(x, "corr_matrix")) {
+    attr(x, "output") <- "matrix"
+    attr(x, "threshold") <- 0
+    attr(x, "diag") <- TRUE
+    return(x)
+  }
   mat <- as.matrix(x)
   estimator_class <- .mc_corr_estimator_class(x)
   method <- attr(x, "method", exact = TRUE) %||% estimator_class
@@ -1063,18 +1181,19 @@ resolve_na_args <- function(na_method = "error",
   )
   source_dim <- dim(mat)
   source_dimnames <- dimnames(mat)
-  source_symmetric <- isTRUE(nrow(mat) == ncol(mat)) &&
-    (isTRUE(identical(rownames(mat), colnames(mat))) ||
-      (is.null(rownames(mat)) && is.null(colnames(mat)))) &&
-    isTRUE(isSymmetric(mat, check.attributes = FALSE))
+  source_symmetric_attr <- attr(x, "corr_symmetric", exact = TRUE)
+  source_symmetric <- if (is.logical(source_symmetric_attr) &&
+    length(source_symmetric_attr) == 1L &&
+    !is.na(source_symmetric_attr)) {
+    isTRUE(source_symmetric_attr)
+  } else {
+    isTRUE(nrow(mat) == ncol(mat)) &&
+      (isTRUE(identical(rownames(mat), colnames(mat))) ||
+        (is.null(rownames(mat)) && is.null(colnames(mat)))) &&
+      isTRUE(isSymmetric(mat, check.attributes = FALSE))
+  }
 
   if (identical(cfg$output, "matrix")) {
-    if (inherits(x, "corr_matrix")) {
-      attr(x, "output") <- "matrix"
-      attr(x, "threshold") <- 0
-      attr(x, "diag") <- TRUE
-      return(x)
-    }
     return(.mc_new_corr_matrix(
       mat = mat,
       estimator_class = estimator_class,
@@ -1093,30 +1212,14 @@ resolve_na_args <- function(na_method = "error",
     ))
   }
 
-  if (identical(cfg$output, "packed_upper")) {
-    out <- .mc_new_corr_packed_upper(
-      df = .mc_matrix_to_packed_upper(mat, threshold = cfg$threshold, diag = cfg$diag),
-      estimator_class = estimator_class,
-      method = method,
-      description = description,
-      threshold = cfg$threshold,
-      diag = cfg$diag,
-      diagnostics = diagnostics,
-      ci = ci,
-      conf.level = conf.level,
-      source_dim = source_dim,
-      source_dimnames = source_dimnames,
-      symmetric = source_symmetric,
-      package_name = package_name,
-      extra_attrs = extra_attrs
-    )
-    attr(out, "matrixCorr_meta") <- meta
-    return(out)
-  }
-
   if (identical(cfg$output, "edge_list")) {
     out <- .mc_new_corr_edge_list(
-      df = .mc_matrix_to_edge_list(mat, threshold = cfg$threshold, diag = cfg$diag),
+      df = .mc_matrix_to_edge_list(
+        mat,
+        threshold = cfg$threshold,
+        diag = cfg$diag,
+        symmetric = source_symmetric
+      ),
       estimator_class = estimator_class,
       method = method,
       description = description,
@@ -1136,7 +1239,12 @@ resolve_na_args <- function(na_method = "error",
   }
 
   out <- .mc_new_corr_sparse(
-    x = .mc_matrix_to_sparse_thresholded(mat, threshold = cfg$threshold, diag = cfg$diag),
+    x = .mc_matrix_to_sparse_thresholded(
+      mat,
+      threshold = cfg$threshold,
+      diag = cfg$diag,
+      symmetric = source_symmetric
+    ),
     estimator_class = estimator_class,
     method = method,
     description = description,
@@ -1182,7 +1290,7 @@ resolve_na_args <- function(na_method = "error",
 .mc_corr_as_edge_df <- function(x) {
   output <- attr(x, "output", exact = TRUE) %||% "matrix"
 
-  if (inherits(x, "corr_packed_upper") || inherits(x, "corr_edge_list")) {
+  if (inherits(x, "corr_edge_list")) {
     out <- x
     class(out) <- "data.frame"
     out <- as.data.frame(out, stringsAsFactors = FALSE, check.names = FALSE)
@@ -1227,7 +1335,8 @@ resolve_na_args <- function(na_method = "error",
   .mc_matrix_to_edge_list(
     as.matrix(x),
     threshold = if (identical(output, "matrix")) 0 else (attr(x, "threshold", exact = TRUE) %||% 0),
-    diag = if (identical(output, "matrix")) TRUE else (attr(x, "diag", exact = TRUE) %||% TRUE)
+    diag = if (identical(output, "matrix")) TRUE else (attr(x, "diag", exact = TRUE) %||% TRUE),
+    symmetric = attr(x, "corr_symmetric", exact = TRUE)
   )
 }
 
@@ -1294,6 +1403,11 @@ resolve_na_args <- function(na_method = "error",
   thr <- attr(x, "threshold", exact = TRUE) %||% 0
   use_diag <- attr(x, "diag", exact = TRUE) %||% TRUE
   symmetric <- isTRUE(attr(x, "corr_symmetric", exact = TRUE))
+  pair_edges <- if (isTRUE(symmetric)) {
+    .mc_corr_pairs(x, diag = FALSE)
+  } else {
+    edges
+  }
   has_ci <- !is.null(attr(x, "ci", exact = TRUE))
   inf_attr <- attr(x, "inference", exact = TRUE)
   has_p <- is.list(inf_attr) && is.matrix(inf_attr$p_value)
@@ -1309,19 +1423,43 @@ resolve_na_args <- function(na_method = "error",
     NA_character_
   }
 
-  vals <- as.numeric(edges$value)
-  vals <- vals[is.finite(vals)]
-  m <- .mc_corr_as_dense_matrix(x)
-  selector <- if (symmetric && dm[[1L]] == dm[[2L]]) {
-    upper.tri(m, diag = FALSE)
+  matrix_output <- identical(output, "matrix") || inherits(x, "corr_matrix")
+  use_matrix_overview <- isTRUE(matrix_output)
+  selector <- NULL
+  if (isTRUE(use_matrix_overview)) {
+    m <- .mc_corr_as_dense_matrix(x)
+    selector <- if (symmetric && dm[[1L]] == dm[[2L]]) {
+      upper.tri(m, diag = FALSE)
+    } else {
+      matrix(TRUE, nrow = dm[[1L]], ncol = dm[[2L]])
+    }
+    vals <- if (is.matrix(m) && identical(dim(m), dm)) {
+      as.numeric(m[selector])
+    } else {
+      numeric()
+    }
+    n_missing <- if (is.matrix(m)) sum(is.na(m)) else NA_integer_
   } else {
-    matrix(TRUE, nrow = dm[[1L]], ncol = dm[[2L]])
+    vals <- as.numeric(edges$value)
+    if (symmetric && dm[[1L]] == dm[[2L]] && nrow(edges)) {
+      vals <- vals[as.character(edges$row) != as.character(edges$col)]
+    }
+    n_missing <- sum(is.na(edges$value))
   }
+  vals <- vals[is.finite(vals)]
   pick_range <- function(mat) {
     if (!is.matrix(mat) || !identical(dim(mat), dm)) {
       return(c(NA_real_, NA_real_))
     }
-    vv <- as.numeric(mat[selector])
+    idx <- selector
+    if (is.null(idx)) {
+      idx <- if (symmetric && dm[[1L]] == dm[[2L]]) {
+        upper.tri(mat, diag = FALSE)
+      } else {
+        matrix(TRUE, nrow = dm[[1L]], ncol = dm[[2L]])
+      }
+    }
+    vv <- as.numeric(mat[idx])
     vv <- vv[is.finite(vv)]
     if (!length(vv)) {
       return(c(NA_real_, NA_real_))
@@ -1331,7 +1469,6 @@ resolve_na_args <- function(na_method = "error",
   diag_attr <- attr(x, "diagnostics", exact = TRUE)
   skipped_n <- if (is.list(diag_attr)) pick_range(diag_attr$skipped_n) else c(NA_real_, NA_real_)
   skipped_prop <- if (is.list(diag_attr)) pick_range(diag_attr$skipped_prop) else c(NA_real_, NA_real_)
-  n_missing <- if (is.matrix(m)) sum(is.na(m)) else NA_integer_
   threshold_sets <- {
     thr <- attr(x, "thresholds", exact = TRUE)
     if (is.list(thr)) length(thr) else NA_integer_
@@ -1364,8 +1501,8 @@ resolve_na_args <- function(na_method = "error",
     n_variables = if (symmetric) as.integer(dm[[1L]]) else NA_integer_,
     n_rows = as.integer(dm[[1L]]),
     n_cols = as.integer(dm[[2L]]),
-    n_pairs = nrow(edges),
-    n_pairs_retained = nrow(edges),
+    n_pairs = nrow(pair_edges),
+    n_pairs_retained = nrow(pair_edges),
     symmetric = symmetric,
     n_missing = n_missing,
     threshold_sets = threshold_sets,
@@ -1386,9 +1523,10 @@ resolve_na_args <- function(na_method = "error",
 #' Inform only when verbose
 #' @keywords internal
 inform_if_verbose <- function(...,
-                              .verbose = getOption("matrixCorr.verbose", TRUE)) {
+                              .verbose = getOption("matrixCorr.verbose", TRUE),
+                              .envir = parent.frame()) {
   if (isTRUE(.verbose)) {
-    cli::cli_inform(...)
+    cli::cli_inform(..., .envir = .envir)
   }
   invisible(NULL)
 }

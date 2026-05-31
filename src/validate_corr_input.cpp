@@ -7,6 +7,14 @@
 #include <algorithm>
 using namespace Rcpp;
 
+namespace {
+const char* missing_values_message =
+   "Missing values are not allowed when na_method = \"error\"; "
+   "non-finite values are not allowed either. "
+   "Use na_method = \"pairwise\" to use pairwise complete observations, "
+   "or na_method = \"complete\" to drop rows with missing or non-finite values before computing correlations.";
+}
+
 // ---- helpers (single-thread safe) ----
 inline bool any_na_int_vec(const int* pi, int n){
    for (int i = 0; i < n; ++i) if (pi[i] == NA_INTEGER) return true;
@@ -20,22 +28,22 @@ inline bool has_class(SEXP x, const char* cls){
    return Rf_inherits(x, cls);
 }
 
-// Parallel NA scan for a REALSXP matrix (no copies)
-// Returns true if any NA/NaN is present.
-inline bool any_na_real_matrix_parallel(SEXP x, int nr, int nc){
+// Parallel finite-value scan for a REALSXP matrix (no copies).
+// Returns true if any NA/NaN/Inf/-Inf is present.
+inline bool any_nonfinite_real_matrix_parallel(SEXP x, int nr, int nc){
    const double* pr = REAL(x);
-   std::atomic<bool> has_na(false);
+   std::atomic<bool> has_nonfinite(false);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(nc > 1)
 #endif
    for (int j = 0; j < nc; ++j) {
-      if (has_na.load(std::memory_order_relaxed)) continue;
+      if (has_nonfinite.load(std::memory_order_relaxed)) continue;
       const double* col = pr + static_cast<R_xlen_t>(j) * nr;
       for (int i = 0; i < nr; ++i) {
-         if (ISNAN(col[i])) { has_na.store(true, std::memory_order_relaxed); break; }
+         if (!R_finite(col[i])) { has_nonfinite.store(true, std::memory_order_relaxed); break; }
       }
    }
-   return has_na.load(std::memory_order_relaxed);
+   return has_nonfinite.load(std::memory_order_relaxed);
 }
 
 // [[Rcpp::export]]
@@ -55,8 +63,8 @@ inline bool any_na_real_matrix_parallel(SEXP x, int nr, int nc){
 
        // double matrix: shallow wrap; optional parallel NA scan
        if (t == REALSXP){
-          if (check_na && any_na_real_matrix_parallel(data, nr, nc))
-             Rcpp::stop("Missing values are not allowed.");
+          if (check_na && any_nonfinite_real_matrix_parallel(data, nr, nc))
+             Rcpp::stop(missing_values_message);
           return Rcpp::NumericMatrix(data); // shallow, no copy
        }
 
@@ -79,10 +87,13 @@ inline bool any_na_real_matrix_parallel(SEXP x, int nr, int nc){
                  dst[i] = static_cast<double>(v);
                }
              } else {
-               for (int i = 0; i < nr; ++i) dst[i] = static_cast<double>(src[i]);
+               for (int i = 0; i < nr; ++i) {
+                 const int v = src[i];
+                 dst[i] = (v == NA_INTEGER) ? NA_REAL : static_cast<double>(v);
+               }
              }
           }
-          if (bad.load(std::memory_order_relaxed)) Rcpp::stop("Missing values are not allowed.");
+          if (bad.load(std::memory_order_relaxed)) Rcpp::stop(missing_values_message);
 
           // preserve colnames
           Rcpp::List dn = Mi.attr("dimnames");
@@ -164,7 +175,7 @@ inline bool any_na_real_matrix_parallel(SEXP x, int nr, int nc){
           if (check_na){
              for (int i = 0; i < n; ++i){
                 const double v = pr[i];
-                if (ISNAN(v)) { bad.store(true, std::memory_order_relaxed); break; }
+                if (!R_finite(v)) { bad.store(true, std::memory_order_relaxed); break; }
                 dst[i] = v;
              }
           } else {
@@ -179,12 +190,15 @@ inline bool any_na_real_matrix_parallel(SEXP x, int nr, int nc){
                 dst[i] = static_cast<double>(v);
              }
           } else {
-             for (int i = 0; i < n; ++i) dst[i] = static_cast<double>(pi[i]);
+             for (int i = 0; i < n; ++i) {
+                const int v = pi[i];
+                dst[i] = (v == NA_INTEGER) ? NA_REAL : static_cast<double>(v);
+             }
           }
        }
     }
 
-    if (bad.load(std::memory_order_relaxed)) Rcpp::stop("Missing values are not allowed.");
+    if (bad.load(std::memory_order_relaxed)) Rcpp::stop(missing_values_message);
 
     // set column names (serial; safe)
     std::vector<std::string> colnames;
@@ -201,3 +215,77 @@ inline bool any_na_real_matrix_parallel(SEXP x, int nr, int nc){
     M.attr("dimnames") = Rcpp::List::create(R_NilValue, Rcpp::wrap(colnames));
     return M;
  }
+
+// [[Rcpp::export]]
+Rcpp::List complete_case_matrix_cpp(Rcpp::NumericMatrix x) {
+   const int nr = x.nrow();
+   const int nc = x.ncol();
+
+   Rcpp::LogicalVector keep(nr);
+   int n_complete = 0;
+
+   for (int i = 0; i < nr; ++i) {
+      bool row_ok = true;
+      for (int j = 0; j < nc; ++j) {
+         if (!R_finite(x(i, j))) {
+            row_ok = false;
+            break;
+         }
+      }
+      keep[i] = row_ok ? TRUE : FALSE;
+      if (row_ok) ++n_complete;
+   }
+
+   Rcpp::NumericMatrix out(n_complete, nc);
+   int dst_i = 0;
+   for (int i = 0; i < nr; ++i) {
+      if (keep[i] != TRUE) continue;
+      for (int j = 0; j < nc; ++j) {
+         out(dst_i, j) = x(i, j);
+      }
+      ++dst_i;
+   }
+
+   SEXP dn_sexp = x.attr("dimnames");
+   if (dn_sexp != R_NilValue) {
+      Rcpp::List dn(dn_sexp);
+      if (dn.size() != 2) {
+         return Rcpp::List::create(
+            Rcpp::_["data"] = out,
+            Rcpp::_["complete_rows"] = keep,
+            Rcpp::_["n_original"] = nr,
+            Rcpp::_["n_complete"] = n_complete
+         );
+      }
+      SEXP row_names = dn[0];
+      SEXP col_names = dn[1];
+      Rcpp::RObject out_row_names = R_NilValue;
+      Rcpp::RObject out_col_names = R_NilValue;
+      if (row_names != R_NilValue) {
+         Rcpp::CharacterVector rn(row_names);
+         keep.attr("names") = Rcpp::clone(rn);
+         Rcpp::CharacterVector kept_names(n_complete);
+         dst_i = 0;
+         for (int i = 0; i < nr; ++i) {
+            if (keep[i] == TRUE) {
+               kept_names[dst_i++] = rn[i];
+            }
+         }
+         out_row_names = kept_names;
+      }
+      if (col_names != R_NilValue) {
+         out_col_names = Rcpp::clone(Rcpp::CharacterVector(col_names));
+      }
+      out.attr("dimnames") = Rcpp::List::create(
+         out_row_names,
+         out_col_names
+      );
+   }
+
+   return Rcpp::List::create(
+      Rcpp::_["data"] = out,
+      Rcpp::_["complete_rows"] = keep,
+      Rcpp::_["n_original"] = nr,
+      Rcpp::_["n_complete"] = n_complete
+   );
+}

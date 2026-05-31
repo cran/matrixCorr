@@ -43,6 +43,10 @@ fit_pol <- polychoric(X_ord, ci = TRUE, p_value = TRUE)
 
 print(fit_tet, digits = 2)
 summary(fit_pol)
+estimate(fit_tet)
+confint(fit_tet)
+ci(fit_tet)
+tidy(fit_tet)
 
 ## -----------------------------------------------------------------------------
 fit_bin_naive <- pearson_corr(data.frame(lapply(X_bin[, 1:2], as.numeric)))

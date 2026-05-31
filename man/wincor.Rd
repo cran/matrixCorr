@@ -10,7 +10,7 @@
 \usage{
 wincor(
   data,
-  na_method = c("error", "pairwise"),
+  na_method = c("error", "pairwise", "complete"),
   ci = FALSE,
   p_value = FALSE,
   conf_level = 0.95,
@@ -72,7 +72,13 @@ wincor(
 \item{data}{A numeric matrix or a data frame with at least two numeric
 columns. All non-numeric columns will be excluded.}
 
-\item{na_method}{One of \code{"error"} (default) or \code{"pairwise"}.}
+\item{na_method}{Character scalar controlling missing-data handling.
+\code{"error"} rejects missing, \code{NaN}, and infinite values.
+\code{"pairwise"} recomputes each estimate on its own pairwise
+complete-case overlap. This is permissive, but different matrix entries
+may be based on different rows. \code{"complete"} performs listwise
+deletion once across the retained numeric columns and then computes the
+estimator on the common complete sample.}
 
 \item{ci}{Logical (default \code{FALSE}). If \code{TRUE}, attach percentile
 bootstrap confidence intervals for each pairwise estimate.}
@@ -255,7 +261,14 @@ X[sample(length(X), 6)] <- X[sample(length(X), 6)] - 12
 R <- wincor(X, tr = 0.2)
 print(R, digits = 2)
 summary(R)
+estimate(R)
+tidy(R)
 plot(R)
+
+## Bootstrap confidence intervals
+R_ci <- wincor(X, tr = 0.2, ci = TRUE, n_boot = 49, seed = 11)
+ci(R_ci)
+confint(R_ci)
 
 # Interactive viewing (requires shiny)
 if (interactive() && requireNamespace("shiny", quietly = TRUE)) {

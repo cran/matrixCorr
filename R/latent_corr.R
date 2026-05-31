@@ -7,7 +7,7 @@
     }
     return(anyNA(x) || !all(is.finite(x)))
   }
-  if (is.factor(x) || is.logical(x)) {
+  if (is.factor(x) || is.logical(x) || is.character(x)) {
     return(anyNA(x))
   }
   anyNA(x) || any(!is.finite(x))
@@ -162,18 +162,6 @@
     return(as.numeric(mat[1L, 1L]))
   }
   mat
-}
-
-.mc_square_dimnames <- function(names) {
-  list(names, names)
-}
-
-.mc_set_matrix_dimnames <- function(x, row_names = NULL, col_names = row_names) {
-  if (is.null(row_names) && is.null(col_names)) {
-    return(x)
-  }
-  dimnames(x) <- list(row_names, col_names)
-  x
 }
 
 .mc_attach_scalar_latent <- function(x, method, description,
@@ -848,15 +836,27 @@
   if (length(pair$x) < 2L) {
     return(NA_real_)
   }
-  ux <- unique(pair$x)
-  uy <- unique(pair$y)
+  .mc_tetrachoric_from_pair(
+    pair$x, pair$y,
+    correct = correct,
+    tau_x = tau_x,
+    tau_y = tau_y,
+    global = global
+  )
+}
+
+.mc_tetrachoric_from_pair <- function(x_pair, y_pair, correct,
+                                      tau_x = NULL, tau_y = NULL,
+                                      global = TRUE) {
+  ux <- unique(x_pair)
+  uy <- unique(y_pair)
   ux <- ux[!is.na(ux)]
   uy <- uy[!is.na(uy)]
   if (length(ux) < 2L || length(uy) < 2L) {
     return(NA_real_)
   }
   .mc_tetrachoric_estimate_internal(
-    pair$x, pair$y, correct = correct,
+    x_pair, y_pair, correct = correct,
     tau_x = tau_x, tau_y = tau_y, global = global
   )
 }
@@ -868,15 +868,29 @@
   if (length(pair$x) < 2L) {
     return(NA_real_)
   }
-  ux <- unique(pair$x)
-  uy <- unique(pair$y)
+  .mc_polychoric_from_pair(
+    pair$x, pair$y,
+    n_x = n_x,
+    n_y = n_y,
+    correct = correct,
+    tau_x = tau_x,
+    tau_y = tau_y,
+    global = global
+  )
+}
+
+.mc_polychoric_from_pair <- function(x_pair, y_pair, n_x, n_y, correct,
+                                     tau_x = NULL, tau_y = NULL,
+                                     global = identical(n_x, n_y)) {
+  ux <- unique(x_pair)
+  uy <- unique(y_pair)
   ux <- ux[!is.na(ux)]
   uy <- uy[!is.na(uy)]
   if (length(ux) < 2L || length(uy) < 2L) {
     return(NA_real_)
   }
   .mc_polychoric_estimate_internal(
-    pair$x, pair$y,
+    x_pair, y_pair,
     n_x = n_x, n_y = n_y,
     correct = correct,
     tau_x = tau_x, tau_y = tau_y,
@@ -894,7 +908,7 @@
   }
   matrixCorr_polyserial_mle_cpp(
     x = as.numeric(pair$x),
-    y = as.integer(as.factor(pair$y))
+    y = as.integer(pair$y)
   )
 }
 
@@ -1051,43 +1065,6 @@
   diag
 }
 
-.mc_structure_corr_matrix <- function(mat, class_name, method, description,
-                                      diagnostics = NULL, thresholds = NULL,
-                                      correct = NULL, dimnames = NULL,
-                                      extra_attrs = NULL,
-                                      classes = c(class_name, "matrix")) {
-  if (!is.null(dimnames)) {
-    dimnames(mat) <- dimnames
-  }
-  keep_classes <- setdiff(
-    classes,
-    c(class_name, "matrix", "corr_matrix", "corr_result")
-  )
-  out <- .mc_new_corr_matrix(
-    mat = mat,
-    estimator_class = class_name,
-    method = method,
-    description = description,
-    output = "matrix",
-    threshold = 0,
-    diag = TRUE,
-    diagnostics = diagnostics,
-    ci = attr(mat, "ci", exact = TRUE),
-    conf.level = attr(mat, "conf.level", exact = TRUE),
-    symmetric = isTRUE(nrow(mat) == ncol(mat)) &&
-      isTRUE(isSymmetric(mat, check.attributes = FALSE)),
-    extra_attrs = c(
-      list(
-        thresholds = thresholds,
-        correct = correct
-      ),
-      extra_attrs %||% list()
-    ),
-    extra_classes = keep_classes
-  )
-  out
-}
-
 #' @title Pairwise Tetrachoric Correlation
 #'
 #' @description
@@ -1240,6 +1217,11 @@
 #' tc <- tetrachoric(X)
 #' print(tc, digits = 3)
 #' summary(tc)
+#' estimate(tc)
+#' tidy(tc)
+#' tc_ci <- tetrachoric(X, ci = TRUE)
+#' ci(tc_ci)
+#' confint(tc_ci)
 #' plot(tc)
 #' tetrachoric(X, output = "edge_list", diag = FALSE)
 #' tetrachoric(X, output = "sparse", threshold = 0.4, diag = FALSE)
@@ -1319,7 +1301,11 @@ tetrachoric <- function(data,
       }
 
       pair <- .mc_pair_complete(enc_x$code, enc_y$code, TRUE)
-      est <- .mc_pair_tetrachoric(pair$x, pair$y, correct, TRUE)
+      est <- .mc_tetrachoric_from_pair(
+        pair$x, pair$y,
+        correct = correct,
+        global = TRUE
+      )
       x01 <- as.integer(pair$x) - min(as.integer(pair$x), na.rm = TRUE)
       y01 <- as.integer(pair$y) - min(as.integer(pair$y), na.rm = TRUE)
       tab <- .mc_fast_binary_table01(x01, y01)
@@ -1380,11 +1366,12 @@ tetrachoric <- function(data,
       class_name = "tetrachoric_corr",
       method = "tetrachoric",
       description = "Pairwise tetrachoric correlation matrix",
+      symmetric = TRUE,
       diagnostics = diag_info,
       thresholds = thresholds,
       correct = correct
     )
-    return(.mc_finalize_corr_output(
+    return(.mc_finalize_corr_output_fast(
       out,
       output = output_cfg$output,
       threshold = output_cfg$threshold,
@@ -1472,7 +1459,11 @@ tetrachoric <- function(data,
     } else {
       NULL
     }
-    est <- .mc_pair_tetrachoric(pair$x, pair$y, correct, TRUE)
+    est <- .mc_tetrachoric_from_pair(
+      pair$x, pair$y,
+      correct = correct,
+      global = TRUE
+    )
     if (!is.null(fit)) {
       fit <- .mc_recenter_wald_fit(fit, estimate = est, conf_level = conf_level)
     }
@@ -1550,15 +1541,14 @@ tetrachoric <- function(data,
       x01 <- as.integer(pair$x) - min(as.integer(pair$x), na.rm = TRUE)
       y01 <- as.integer(pair$y) - min(as.integer(pair$y), na.rm = TRUE)
       tab <- .mc_fast_binary_table01(x01, y01)
-      est_jk <- .mc_pair_tetrachoric(
-        enc[[j]]$code, enc[[k]]$code,
-        correct = correct,
-        check_na = check_na,
-        tau_x = tau[j],
-        tau_y = tau[k],
-        global = TRUE
-      )
       if (isTRUE(ci) || isTRUE(p_value)) {
+        est_jk <- .mc_tetrachoric_from_pair(
+          pair$x, pair$y,
+          correct = correct,
+          tau_x = tau[j],
+          tau_y = tau[k],
+          global = TRUE
+        )
         fit <- .mc_tetrachoric_inference_one(tab, correct = correct, conf_level = conf_level)
         fit <- .mc_recenter_wald_fit(fit, estimate = est_jk, conf_level = conf_level)
         out[j, k] <- est_jk
@@ -1589,6 +1579,7 @@ tetrachoric <- function(data,
     class_name = "tetrachoric_corr",
     method = "tetrachoric",
     description = "Pairwise tetrachoric correlation matrix",
+    symmetric = TRUE,
     diagnostics = diag_info,
     thresholds = thresholds,
     correct = correct
@@ -1613,7 +1604,7 @@ tetrachoric <- function(data,
       conf_level = conf_level
     )
   }
-  .mc_finalize_corr_output(
+  .mc_finalize_corr_output_fast(
     out,
     output = output_cfg$output,
     threshold = output_cfg$threshold,
@@ -1881,6 +1872,11 @@ print.summary.tetrachoric_corr <- function(x, digits = NULL, n = NULL,
 #' pc <- polychoric(Y)
 #' print(pc, digits = 3)
 #' summary(pc)
+#' estimate(pc)
+#' tidy(pc)
+#' pc_ci <- polychoric(Y, ci = TRUE)
+#' ci(pc_ci)
+#' confint(pc_ci)
 #' plot(pc)
 #' polychoric(Y, output = "edge_list", threshold = 0.3, diag = FALSE)
 #'
@@ -1957,12 +1953,11 @@ polychoric <- function(data,
       n_y <- length(enc_y$levels)
       global <- identical(n_x, n_y)
       pair <- .mc_pair_complete(enc_x$code, enc_y$code, TRUE)
-      est <- .mc_pair_polychoric(
+      est <- .mc_polychoric_from_pair(
         pair$x, pair$y,
         n_x = n_x,
         n_y = n_y,
         correct = correct,
-        check_na = TRUE,
         tau_x = if (global) .mc_global_cutpoints(pair$x, n_x) else NULL,
         tau_y = if (global) .mc_global_cutpoints(pair$y, n_y) else NULL,
         global = global
@@ -2031,11 +2026,12 @@ polychoric <- function(data,
       class_name = "polychoric_corr",
       method = "polychoric",
       description = "Pairwise polychoric correlation matrix",
+      symmetric = TRUE,
       diagnostics = diag_info,
       thresholds = thresholds,
       correct = correct
     )
-    return(.mc_finalize_corr_output(
+    return(.mc_finalize_corr_output_fast(
       out,
       output = output_cfg$output,
       threshold = output_cfg$threshold,
@@ -2124,10 +2120,10 @@ polychoric <- function(data,
     } else {
       NULL
     }
-    est <- .mc_pair_polychoric(
+    est <- .mc_polychoric_from_pair(
       pair$x, pair$y,
       n_x = n_x, n_y = n_y,
-      correct = correct, check_na = TRUE,
+      correct = correct,
       tau_x = if (global) .mc_global_cutpoints(pair$x, n_x) else NULL,
       tau_y = if (global) .mc_global_cutpoints(pair$y, n_y) else NULL,
       global = global
@@ -2219,17 +2215,16 @@ polychoric <- function(data,
         n_y = length(enc[[k]]$levels)
       )
       global <- if (global_all) TRUE else identical(n_levels[j], n_levels[k])
-      est_jk <- .mc_pair_polychoric(
-        enc[[j]]$code, enc[[k]]$code,
-        n_x = n_levels[j],
-        n_y = n_levels[k],
-        correct = correct,
-        check_na = check_na,
-        tau_x = if (global) global_thresholds[[j]] else NULL,
-        tau_y = if (global) global_thresholds[[k]] else NULL,
-        global = global
-      )
       if (isTRUE(ci) || isTRUE(p_value)) {
+        est_jk <- .mc_polychoric_from_pair(
+          pair$x, pair$y,
+          n_x = n_levels[j],
+          n_y = n_levels[k],
+          correct = correct,
+          tau_x = if (global) global_thresholds[[j]] else NULL,
+          tau_y = if (global) global_thresholds[[k]] else NULL,
+          global = global
+        )
         fit <- .mc_polychoric_inference_one(tab, correct = correct, conf_level = conf_level)
         fit <- .mc_recenter_wald_fit(fit, estimate = est_jk, conf_level = conf_level)
         out[j, k] <- est_jk
@@ -2259,6 +2254,7 @@ polychoric <- function(data,
     class_name = "polychoric_corr",
     method = "polychoric",
     description = "Pairwise polychoric correlation matrix",
+    symmetric = TRUE,
     diagnostics = diag_info,
     thresholds = thresholds,
     correct = correct
@@ -2283,7 +2279,7 @@ polychoric <- function(data,
       conf_level = conf_level
     )
   }
-  .mc_finalize_corr_output(
+  .mc_finalize_corr_output_fast(
     out,
     output = output_cfg$output,
     threshold = output_cfg$threshold,
@@ -2519,6 +2515,11 @@ print.summary.polychoric_corr <- function(x, digits = NULL, n = NULL,
 #' ps <- polyserial(X, Y)
 #' print(ps, digits = 3)
 #' summary(ps)
+#' estimate(ps)
+#' tidy(ps)
+#' ps_ci <- polyserial(X, Y, ci = TRUE)
+#' ci(ps_ci)
+#' confint(ps_ci)
 #' plot(ps)
 #' @author Thiago de Paula Oliveira
 #' @export
@@ -2924,6 +2925,10 @@ print.summary.polyserial_corr <- function(x, digits = NULL, n = NULL,
 #' bs <- biserial(X, Y, ci = TRUE, p_value = TRUE)
 #' print(bs, digits = 3)
 #' summary(bs)
+#' estimate(bs)
+#' tidy(bs)
+#' ci(bs)
+#' confint(bs)
 #' plot(bs)
 #' @author Thiago de Paula Oliveira
 #' @export
@@ -3586,6 +3591,8 @@ print.summary.matrixCorr <- function(x,
       topn = cfg$topn,
       max_vars = cfg$max_vars,
       width = cfg$width,
+      digits = digits,
+      ci_digits = .mc_coalesce(attr(x, "ci_digits", exact = TRUE), digits),
       show_ci = cfg$show_ci,
       ...
     )
@@ -3641,4 +3648,5 @@ print.summary.latent_corr <- function(x, digits = 4, ...) {
 }
 
 print.summary_latent_corr <- print.summary.latent_corr
+
 

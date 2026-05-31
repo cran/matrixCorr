@@ -16,7 +16,10 @@
 #' @param na_method Character scalar controlling missing-data handling.
 #'   \code{"error"} rejects missing, \code{NaN}, and infinite values.
 #'   \code{"pairwise"} recomputes each correlation on its own pairwise
-#'   complete-case overlap.
+#'   complete-case overlap. This is permissive, but different matrix entries
+#'   may be based on different rows. \code{"complete"} performs listwise
+#'   deletion once across the retained numeric columns and then computes the
+#'   estimator on the common complete sample.
 #' @param ci Logical (default \code{FALSE}). If \code{TRUE}, attach pairwise
 #' confidence intervals for the off-diagonal Kendall correlations in
 #' matrix/data-frame mode.
@@ -155,6 +158,10 @@
 #' kt_ci <- kendall_tau(mat[, 1:3], ci = TRUE)
 #' print(kt_ci, show_ci = "yes")
 #' summary(kt_ci)
+#' estimate(kt_ci)
+#' tidy(kt_ci)
+#' ci(kt_ci)
+#' confint(kt_ci)
 #'
 #' # Two-vector mode (scalar path)
 #' x <- rnorm(1000); y <- 0.5 * x + rnorm(1000)
@@ -179,7 +186,7 @@
 #' @export
 kendall_tau <- function(data,
                         y = NULL,
-                        na_method = c("error", "pairwise"),
+                        na_method = c("error", "pairwise", "complete"),
                         ci = FALSE,
                         conf_level = 0.95,
                         ci_method = c("fieller", "if_el", "brown_benedetti"),
@@ -188,46 +195,39 @@ kendall_tau <- function(data,
                         threshold = 0,
                         diag = TRUE,
                         ...) {
-  output_cfg <- .mc_validate_output_args(
+  output_cfg <- .mc_prepare_corr_output(
     output = output,
     threshold = threshold,
     diag = diag
   )
   if (is.null(y) && ...length() == 0L && missing(na_method) && isFALSE(ci)) {
-    numeric_data <- validate_corr_input(data, check_na = TRUE)
-    colnames_data <- colnames(numeric_data)
-    prev_threads <- .mc_prepare_omp_threads(
+    input <- .mc_prepare_corr_input(
+      data,
+      na_cfg = list(na_method = "error", check_na = TRUE),
+      min_n = 2L
+    )
+    return(.mc_with_omp_threads(
       n_threads,
-      n_threads_missing = missing(n_threads)
-    )
-    if (!is.null(prev_threads)) {
-      on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
-    }
-    out <- .mc_structure_corr_matrix(
-      kendall_matrix_cpp(numeric_data),
-      class_name = "kendall_matrix",
-      method = "kendall",
-      description = "Pairwise Kendall's tau (auto tau-a/tau-b) correlation matrix",
-      dimnames = if (!is.null(colnames_data)) .mc_square_dimnames(colnames_data)
-    )
-    return(.mc_finalize_corr_output(
-      out,
-      output = output_cfg$output,
-      threshold = output_cfg$threshold,
-      diag = output_cfg$diag
+      {
+        .mc_finalize_corr_result(
+          mat = kendall_matrix_cpp(input$data),
+          class_name = "kendall_matrix",
+          method = "kendall",
+          description = "Pairwise Kendall's tau (auto tau-a/tau-b) correlation matrix",
+          output_cfg = output_cfg,
+          dimnames = input$dimnames,
+          symmetric = TRUE
+        )
+      }
     ))
   }
 
-  if (...length() == 0L && missing(na_method)) {
-    na_cfg <- list(na_method = "error", check_na = TRUE)
-  } else {
-    legacy_args <- .mc_extract_legacy_aliases(list(...), allowed = "check_na")
-    na_cfg <- resolve_na_args(
-      na_method = na_method,
-      check_na = legacy_args$check_na %||% NULL,
-      na_method_missing = missing(na_method)
-    )
-  }
+  na_cfg <- .mc_resolve_corr_na(
+    na_method = na_method,
+    dots = list(...),
+    na_method_missing = missing(na_method),
+    allowed = c("error", "pairwise", "complete")
+  )
   if (!isFALSE(ci)) {
     check_bool(ci, arg = "ci")
   } else if (!is.logical(ci) || length(ci) != 1L || is.na(ci)) {
@@ -262,74 +262,72 @@ kendall_tau <- function(data,
         .hint   = "Set `na_method = \"pairwise\"` to use complete-case overlaps."
       )
     }
+    if (identical(na_cfg$na_method, "complete")) {
+      keep <- is.finite(data) & is.finite(y)
+      if (sum(keep) < 2L) {
+        abort_bad_arg(
+          "data",
+          message = "must retain at least 2 complete rows when {.arg na_method} is {.val complete}; retained {sum(keep)}."
+        )
+      }
+      data <- data[keep]
+      y <- y[keep]
+    }
 
     tau <- kendall_tau2_cpp(as.numeric(data), as.numeric(y))
     return(as.numeric(tau))
   }
 
-  numeric_data <- validate_corr_input(data, check_na = na_cfg$check_na)
-  colnames_data <- colnames(numeric_data)
-  dn <- .mc_square_dimnames(colnames_data)
+  input <- .mc_prepare_corr_input(data, na_cfg = na_cfg, min_n = 2L)
   diagnostics <- NULL
   ci_attr <- NULL
 
-  prev_threads <- .mc_prepare_omp_threads(
+  .mc_with_omp_threads(
     n_threads,
-    n_threads_missing = missing(n_threads)
-  )
-  if (!is.null(prev_threads)) {
-    on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
-  }
+    {
+      if (!identical(na_cfg$na_method, "pairwise") && !isTRUE(ci)) {
+        result <- kendall_matrix_cpp(input$data)
+      } else {
+        pairwise <- kendall_matrix_pairwise_cpp(
+          input$data,
+          return_ci = ci,
+          conf_level = conf_level,
+          ci_method = ci_method
+        )
+        result <- pairwise$est
+        diagnostics <- list(
+          n_complete = .mc_set_matrix_dimnames(pairwise$n_complete, input$colnames)
+        )
+        if (isTRUE(ci)) {
+          ci_attr <- list(
+            est = .mc_set_matrix_dimnames(unclass(result), input$colnames),
+            lwr.ci = .mc_set_matrix_dimnames(unclass(pairwise$lwr), input$colnames),
+            upr.ci = .mc_set_matrix_dimnames(unclass(pairwise$upr), input$colnames),
+            conf.level = pairwise$conf_level,
+            ci.method = pairwise$ci_method
+          )
+        }
+      }
 
-  if (isTRUE(na_cfg$check_na) && !isTRUE(ci)) {
-    result <- kendall_matrix_cpp(numeric_data)
-  } else {
-    pairwise <- kendall_matrix_pairwise_cpp(
-      numeric_data,
-      return_ci = ci,
-      conf_level = conf_level,
-      ci_method = ci_method
-    )
-    result <- pairwise$est
-    diagnostics <- list(
-      n_complete = .mc_set_matrix_dimnames(pairwise$n_complete, colnames_data)
-    )
-    if (isTRUE(ci)) {
-      ci_attr <- list(
-        est = .mc_set_matrix_dimnames(unclass(result), colnames_data),
-        lwr.ci = .mc_set_matrix_dimnames(unclass(pairwise$lwr), colnames_data),
-        upr.ci = .mc_set_matrix_dimnames(unclass(pairwise$upr), colnames_data),
-        conf.level = pairwise$conf_level,
-        ci.method = pairwise$ci_method
+      .mc_finalize_corr_result(
+        mat = result,
+        class_name = "kendall_matrix",
+        method = "kendall",
+        description = "Pairwise Kendall's tau (auto tau-a/tau-b) correlation matrix",
+        output_cfg = output_cfg,
+        diagnostics = .mc_merge_diagnostics(diagnostics, input$diagnostics),
+        dimnames = input$dimnames,
+        symmetric = TRUE,
+        extra_attrs = if (!is.null(ci_attr)) {
+          list(
+            ci = ci_attr,
+            conf.level = conf_level,
+            ci.method = ci_method
+          )
+        }
       )
     }
-  }
-
-  out <- .mc_structure_corr_matrix(
-    result,
-    class_name = "kendall_matrix",
-    method = "kendall",
-    description = "Pairwise Kendall's tau (auto tau-a/tau-b) correlation matrix",
-    diagnostics = diagnostics,
-    dimnames = dn,
-    extra_attrs = if (!is.null(ci_attr)) {
-      list(
-        ci = ci_attr,
-        conf.level = conf_level,
-        ci.method = ci_method
-      )
-    }
   )
-  .mc_finalize_corr_output(
-    out,
-    output = output_cfg$output,
-    threshold = output_cfg$threshold,
-    diag = output_cfg$diag
-  )
-}
-
-.mc_kendall_ci_attr <- function(x) {
-  attr(x, "ci", exact = TRUE)
 }
 
 .mc_kendall_pairwise_summary <- function(object,
@@ -343,51 +341,19 @@ kendall_tau <- function(data,
   )
   check_inherits(object, "kendall_matrix")
 
-  est <- as.matrix(object)
-  rn <- rownames(est); cn <- colnames(est)
-  if (is.null(rn)) rn <- as.character(seq_len(nrow(est)))
-  if (is.null(cn)) cn <- as.character(seq_len(ncol(est)))
-
-  ci <- .mc_kendall_ci_attr(object)
-  diag_attr <- attr(object, "diagnostics", exact = TRUE)
-  include_ci <- identical(show_ci, "yes") && !is.null(ci)
-
-  rows <- vector("list", nrow(est) * (ncol(est) - 1L) / 2L)
-  k <- 0L
-  for (i in seq_len(nrow(est) - 1L)) {
-    for (j in (i + 1L):ncol(est)) {
-      k <- k + 1L
-      rec <- list(
-        var1 = rn[i],
-        var2 = cn[j],
-        estimate = round(est[i, j], digits)
-      )
-      if (is.list(diag_attr) && is.matrix(diag_attr$n_complete)) {
-        rec$n_complete <- as.integer(diag_attr$n_complete[i, j])
-      }
-      if (include_ci) {
-        rec$lwr <- if (!is.null(ci$lwr.ci) && is.finite(ci$lwr.ci[i, j])) round(ci$lwr.ci[i, j], ci_digits) else NA_real_
-        rec$upr <- if (!is.null(ci$upr.ci) && is.finite(ci$upr.ci[i, j])) round(ci$upr.ci[i, j], ci_digits) else NA_real_
-      }
-      rows[[k]] <- rec
-    }
-  }
-
-  df <- do.call(rbind.data.frame, rows)
-  rownames(df) <- NULL
-  if ("estimate" %in% names(df)) df$estimate <- as.numeric(df$estimate)
-  if ("lwr" %in% names(df)) df$lwr <- as.numeric(df$lwr)
-  if ("upr" %in% names(df)) df$upr <- as.numeric(df$upr)
-  if ("n_complete" %in% names(df)) df$n_complete <- as.integer(df$n_complete)
-
-  out <- .mc_finalize_summary_df(df, class_name = "summary.kendall_matrix")
-  attr(out, "overview") <- .mc_summary_corr_matrix(object)
-  attr(out, "has_ci") <- include_ci
-  attr(out, "conf.level") <- if (is.null(ci)) NA_real_ else ci$conf.level
-  attr(out, "ci.method") <- if (is.null(ci)) NA_character_ else ci$ci.method
-  attr(out, "digits") <- digits
-  attr(out, "ci_digits") <- ci_digits
-  out
+  ci <- .mc_ci_attr(object)
+  .mc_pairwise_matrix_summary(
+    object,
+    class_name = "summary.kendall_matrix",
+    digits = digits,
+    ci_digits = ci_digits,
+    show_ci = show_ci,
+    ci_attr = ci,
+    include_p = NULL,
+    extra_attrs = list(
+      ci.method = if (is.null(ci)) NA_character_ else ci$ci.method
+    )
+  )
 }
 
 #' @rdname kendall_tau
@@ -453,7 +419,7 @@ plot.kendall_matrix <- function(x, title = "Kendall's Tau correlation heatmap",
                                 mid_color = "white", value_text_size = 4,
                                 ci_text_size = 3, show_value = TRUE, ...) {
   check_bool(show_value, arg = "show_value")
-  ci <- .mc_kendall_ci_attr(x)
+  ci <- .mc_ci_attr(x)
   if (is.null(ci) || is.null(ci$lwr.ci) || is.null(ci$upr.ci)) {
     return(.mc_plot_corr_matrix(
       x, class_name = "kendall_matrix", fill_name = "Tau",
@@ -547,7 +513,7 @@ summary.kendall_matrix <- function(object,
     arg = "show_ci",
     default = .mc_display_option("summary_show_ci", "yes")
   )
-  if (is.null(.mc_kendall_ci_attr(object))) {
+  if (is.null(.mc_ci_attr(object))) {
     return(.mc_summary_corr_matrix(object, topn = topn))
   }
   .mc_kendall_pairwise_summary(
@@ -579,4 +545,5 @@ print.summary.kendall_matrix <- function(x, digits = NULL, n = NULL,
   )
   invisible(x)
 }
+
 

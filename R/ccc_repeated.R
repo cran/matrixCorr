@@ -22,20 +22,23 @@
 #' one time point is assumed.
 #' @param Dmat Optional numeric weight matrix (T \eqn{\times} T) for
 #' timepoints. Defaults to identity.
-#' @param delta Numeric. Power exponent used in the distance computations
-#' between method trajectories
-#' across time points. This controls the contribution of differences between
-#' measurements:
-#' \itemize{
-#'   \item \code{delta = 1} (default) uses **absolute differences**.
-#'   \item \code{delta = 2} uses **squared differences**, more sensitive to
-#'   larger deviations.
-#'   \item \code{delta = 0} reduces to a **binary distance** (presence/absence
-#'   of disagreement), analogous to a repeated-measures version of the kappa
-#'   statistic.
-#' }
-#' The choice of \code{delta} should reflect the penalty you want to assign to
-#' measurement disagreement.
+#' @param delta Numeric. Exponent applied to the absolute pointwise differences
+#'   between two method trajectories before the time-weighted quadratic form is
+#'   evaluated. Internally, the function forms
+#'   \eqn{v_t = |X_t - Y_t|^\delta} and then computes
+#'   \eqn{v^\top D v}, where \eqn{D} is \code{Dmat}.
+#'   Therefore, when \code{Dmat} is diagonal:
+#'   \itemize{
+#'     \item \code{delta = 1} (default) gives the standard quadratic
+#'       repeated-measures CCC distance,
+#'       \eqn{(X - Y)^\top D (X - Y)}.
+#'     \item \code{delta = 2} gives a fourth-power loss,
+#'       which puts stronger emphasis on large disagreements.
+#'     \item \code{delta = 0} gives a binary disagreement indicator before
+#'       aggregation, analogous to a repeated-measures kappa-type distance.
+#'   }
+#'   In most applications, \code{delta = 1} should be used because it matches
+#'   the usual quadratic distance used in repeated-measures CCC.
 #
 #' @param ci Logical. If TRUE, returns confidence intervals (default FALSE).
 #' @param conf_level Confidence level for CI (default 0.95).
@@ -143,6 +146,10 @@
 #'                             method = "method", time = "time", ci = TRUE)
 #' print(ccc2)
 #' summary(ccc2)
+#' estimate(ccc2)
+#' tidy(ccc2)
+#' ci(ccc2)
+#' confint(ccc2)
 #' plot(ccc2)
 #'
 #' # Interactive viewing (requires shiny)
@@ -153,18 +160,16 @@
 #' #------------------------------------------------------------------------
 #' # Choosing delta based on distance sensitivity
 #' #------------------------------------------------------------------------
-#' # Absolute distance (L1 norm) - robust
+#' # Standard quadratic RM-CCC distance: (X - Y)' D (X - Y)
 #' ccc_rm_ustat(df, response = "y", subject = "subject",
-#'                     method = "method", time = "time", delta = 1)
+#'              method = "method", time = "time", delta = 1)
 #'
-#' # Squared distance (L2 norm) - amplifies large deviations
+#' # Fourth-power loss when D is diagonal: emphasises large disagreements
 #' ccc_rm_ustat(df, response = "y", subject = "subject",
-#'                     method = "method", time = "time", delta = 2)
-#'
-#' # Presence/absence of disagreement (like kappa)
+#'              method = "method", time = "time", delta = 2)
+#' # Binary disagreement indicator before aggregation
 #' ccc_rm_ustat(df, response = "y", subject = "subject",
-#'                     method = "method", time = "time", delta = 0)
-#'
+#'              method = "method", time = "time", delta = 0)
 #' @author Thiago de Paula Oliveira
 #' @export
 ccc_rm_ustat <- function(data,
@@ -233,14 +238,25 @@ ccc_rm_ustat <- function(data,
   cccr_lwr <- matrix(NA_real_, L, L, dimnames = list(method_levels, method_levels))
   cccr_upr <- matrix(NA_real_, L, L, dimnames = list(method_levels, method_levels))
 
+  needed <- c(response, method, subject)
+  if (!is.null(time)) needed <- c(needed, time)
+  complete_mask <- stats::complete.cases(df[, needed, drop = FALSE])
+  response_vec <- df[[response]]
+  subject_vec <- df$subject_i
+  time_vec <- df$time_i
+  method_code <- as.integer(df[[method]])
+  rows_by_method <- split(seq_len(nrow(df)), method_code)
+
   prev_threads <- .mc_prepare_omp_threads(
-    n_threads,
-    n_threads_missing = missing(n_threads)
+    n_threads
   )
   if (!is.null(prev_threads)) {
     on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
   }
-  if (verbose) cat("Using", get_omp_threads(), "OpenMP threads\n")
+  inform_if_verbose(
+    "Using {get_omp_threads()} OpenMP thread{?s}.",
+    .verbose = verbose
+  )
 
   # Loop over all method pairs
   for (i in 1:(L - 1)) {
@@ -248,11 +264,9 @@ ccc_rm_ustat <- function(data,
       m1 <- method_levels[i]
       m2 <- method_levels[j]
 
-      df_sub <- df[df[[method]] %in% c(m1, m2), , drop = FALSE]
-      needed <- c(response, method, subject)
-      if (!is.null(time)) needed <- c(needed, time)
-      df_sub <- df_sub[stats::complete.cases(df_sub[, needed, drop = FALSE]), , drop = FALSE]
-      if (!nrow(df_sub)) {
+      pair_rows <- c(rows_by_method[[i]], rows_by_method[[j]])
+      pair_rows <- pair_rows[complete_mask[pair_rows]]
+      if (!length(pair_rows)) {
         cli::cli_abort(
           c(
             "No complete observations for method pair {.val {m1}} vs {.val {m2}}.",
@@ -261,9 +275,9 @@ ccc_rm_ustat <- function(data,
         )
       }
 
-      df_sub$met_i <- as.integer(factor(df_sub[[method]], levels = c(m1, m2))) - 1L
-
-      sid <- df_sub$subject_i
+      sid <- subject_vec[pair_rows]
+      tim <- time_vec[pair_rows]
+      met_i <- as.integer(method_code[pair_rows] == j)
       uid <- sort(unique(sid))
       if (!length(uid)) {
         cli::cli_abort(
@@ -273,19 +287,19 @@ ccc_rm_ustat <- function(data,
 
       sid_idx <- match(sid, uid)
       rows_by_subj <- tabulate(sid_idx, nbins = length(uid))
-      combo_code <- sid_idx + length(uid) * (df_sub$time_i + ntime * df_sub$met_i)
+      combo_code <- sid_idx + length(uid) * (tim + ntime * met_i)
       uniq_combo <- !duplicated(combo_code)
       uniq_by_subj <- tabulate(sid_idx[uniq_combo], nbins = length(uid))
 
       complete_subj <- (rows_by_subj == (ntime * 2L)) & (uniq_by_subj == (ntime * 2L))
-      keep_ids <- uid[complete_subj]
-      if (!length(keep_ids)) {
+      ns_complete <- sum(complete_subj)
+      if (!ns_complete) {
         cli::cli_abort(
           "All subjects have incomplete method/time coverage for {.val {m1}} vs {.val {m2}}."
         )
       }
 
-      if (length(keep_ids) < 2L) {
+      if (ns_complete < 2L) {
         cli::cli_abort(
           c(
             "At least two subjects with complete observations are required for {.val {m1}} vs {.val {m2}}.",
@@ -294,15 +308,18 @@ ccc_rm_ustat <- function(data,
         )
       }
 
-      df_sub <- df_sub[df_sub$subject_i %in% keep_ids, , drop = FALSE]
-      keep_ids <- sort(unique(df_sub$subject_i))
-      df_sub$subject_pair <- match(df_sub$subject_i, keep_ids) - 1L
-      ns <- length(keep_ids)
+      keep_mask <- complete_subj[sid_idx]
+      pair_rows <- pair_rows[keep_mask]
+      tim <- tim[keep_mask]
+      met_i <- met_i[keep_mask]
+      complete_map <- cumsum(complete_subj) - 1L
+      subject_pair <- complete_map[sid_idx[keep_mask]]
+      ns <- ns_complete
 
-      res <- cccUst_rcpp(df_sub[[response]],
-                         df_sub$met_i,
-                         df_sub$time_i,
-                         df_sub$subject_pair,
+      res <- cccUst_rcpp(response_vec[pair_rows],
+                         met_i,
+                         tim,
+                         subject_pair,
                          0, 1,
                          ntime, ns,
                          Dmat, delta,
@@ -417,10 +434,8 @@ ccc_rm_ustat <- function(data,
 #'   fitted variance components and \eqn{S_B} for each fit. Default \code{FALSE}.
 #' @param digits Integer \eqn{(\ge 0)}. Number of decimal places to use in the
 #'   printed summary when \code{verbose = TRUE}. Default \code{4}.
-#' @param use_message Logical. When \code{verbose = TRUE}, choose the printing
-#'   mechanism, where \code{TRUE} uses \code{message()} (respects \code{sink()},
-#'   easily suppressible via \code{suppressMessages()}), whereas \code{FALSE}
-#'   uses \code{cat()} to \code{stdout}. Default \code{TRUE}.
+#' @param use_message Logical. When \code{verbose = TRUE}, verbose summaries
+#'   are emitted with \pkg{cli} messages.
 #'
 #' @param ar Character. Residual correlation structure: \code{"none"} (iid) or
 #'   \code{"ar1"} for subject-level AR(1) correlation within contiguous time
@@ -783,9 +798,9 @@ ccc_rm_ustat <- function(data,
 #'
 #' @section Threading and BLAS guards:
 #' The C++ backend uses OpenMP loops while also forcing vendor BLAS libraries to
-#' run single-threaded so that overall CPU usage stays predictable. On OpenBLAS
-#' and Apple's Accelerate this is handled automatically. On Intel MKL builds the
-#' guard is disabled by default, but you can also opt out manually by setting
+#' run single-threaded so that overall CPU usage stays predictable. This guard
+#' is applied to OpenBLAS, Apple's Accelerate, and Intel MKL when their runtime
+#' controls are available. You can opt out manually by setting
 #' \code{MATRIXCORR_DISABLE_BLAS_GUARD=1} in the environment before loading
 #' \pkg{matrixCorr}.
 #'
@@ -852,8 +867,12 @@ ccc_rm_ustat <- function(data,
 #'
 #' # Both sigma2_subject_method and sigma2_subject_time are identifiable here
 #' fit_both <- ccc_rm_reml(dat_both, "y", "id", method = "method", time = "time",
-#'                          vc_select = "auto", verbose = TRUE)
+#'                          vc_select = "auto", ci = TRUE, verbose = TRUE)
 #' summary(fit_both)
+#' estimate(fit_both)
+#' tidy(fit_both)
+#' ci(fit_both)
+#' confint(fit_both)
 #' plot(fit_both)
 #'
 #' # Interactive viewing (requires shiny)
@@ -979,9 +998,12 @@ ccc_rm_ustat <- function(data,
 #' y <- mu + u + e
 #' dat_ar4 <- data.frame(y = y, id = id, method = method, time = time)
 #'
-#' ccc_rm_reml(dat_ar4,
+#' fit4 <- ccc_rm_reml(dat_ar4,
 #'              response = "y", subject = "id", method = "method", time = "time",
 #'              ar = "ar1", ar_rho = 0.6, verbose = TRUE)
+#' fit4
+#' summary(fit4)
+#' plot(fit4)
 #' }
 #'
 #' # ====================================================================
@@ -1066,6 +1088,75 @@ ccc_rm_ustat <- function(data,
 #' D-matrix options (`Dmat_type`, `Dmat`, `Dmat_weights`) control how time
 #' averaging operates when translating variance components into CCC summaries.
 #'
+#' @name ccc_rm_reml
+NULL
+
+#' Internal input checks for repeated-measures REML wrappers.
+#' @keywords internal
+#' @noRd
+.validate_rm_wrapper_inputs <- function(df, response, subject, method = NULL, time = NULL,
+                                        slope = c("none", "subject", "method", "custom"),
+                                        slope_var = NULL, slope_Z = NULL,
+                                        include_subj_time = NULL,
+                                        vc_select = c("auto", "none")) {
+  slope <- match.arg(slope)
+  vc_select <- match.arg(vc_select)
+
+  if (!is.numeric(df[[response]]) || any(!is.finite(df[[response]]))) {
+    abort_bad_arg("response",
+      message = "must reference a finite numeric column in {.arg data}."
+    )
+  }
+
+  for (arg in c(subject, method, time)) {
+    if (is.null(arg)) next
+    if (anyNA(df[[arg]])) {
+      abort_bad_arg(arg,
+        message = "must not contain missing values for repeated-measures REML fits."
+      )
+    }
+  }
+
+  if (isTRUE(include_subj_time) && is.null(time)) {
+    abort_bad_arg("include_subj_time",
+      message = "cannot be TRUE when {.arg time} is NULL."
+    )
+  }
+
+  if (identical(slope, "subject") || identical(slope, "method")) {
+    if (is.null(slope_var)) {
+      abort_bad_arg("slope_var",
+        message = "must be supplied when {.arg slope} is {.val {slope}}."
+      )
+    }
+    if (!is.numeric(df[[slope_var]]) || any(!is.finite(df[[slope_var]]))) {
+      abort_bad_arg("slope_var",
+        message = "must reference a finite numeric column in {.arg data}."
+      )
+    }
+  }
+
+  if (identical(slope, "custom")) {
+    if (is.null(slope_Z)) {
+      abort_bad_arg("slope_Z",
+        message = "must be supplied when {.arg slope} is {.val custom}."
+      )
+    }
+    slope_Z <- as.matrix(slope_Z)
+    check_matrix_dims(slope_Z, nrow = nrow(df), arg = "slope_Z")
+    if (!is.numeric(slope_Z) || ncol(slope_Z) <= 0L || any(!is.finite(slope_Z))) {
+      abort_bad_arg("slope_Z",
+        message = "must be a finite numeric matrix with at least one column."
+      )
+    }
+  } else {
+    slope_Z <- NULL
+  }
+
+  slope_Z
+}
+
+#' @rdname ccc_rm_reml
 #' @export
 ccc_rm_reml <- function(data, response, subject,
                          method = NULL, time = NULL,
@@ -1137,14 +1228,21 @@ ccc_rm_reml <- function(data, response, subject,
   check_required_cols(df, req_cols, df_arg = "data")
 
   df[[response]] <- as.numeric(df[[response]])
-  if (anyNA(df[[response]])) {
-    abort_bad_arg("response",
-      message = "must reference a numeric column in {.arg data}."
-    )
-  }
   df[[subject]] <- factor(df[[subject]])
   if (!is.null(method))  df[[method]]  <- factor(df[[method]])
   if (!is.null(time)) df[[time]] <- factor(df[[time]])
+  slope_Z <- .validate_rm_wrapper_inputs(
+    df = df,
+    response = response,
+    subject = subject,
+    method = method,
+    time = time,
+    slope = slope,
+    slope_var = slope_var,
+    slope_Z = slope_Z,
+    include_subj_time = include_subj_time,
+    vc_select = vc_select
+  )
   all_time_lvls <- if (!is.null(time)) levels(df[[time]]) else character(0)
 
   terms_rhs <- "1"
@@ -1170,10 +1268,23 @@ ccc_rm_reml <- function(data, response, subject,
     )
   }
 
+  if (is.null(time)) {
+    return(.ccc_rm_reml_no_time_fallback(
+      df = df,
+      response = response,
+      rind = subject,
+      method = method,
+      ci = ci,
+      conf_level = conf_level,
+      out_class = "ccc_rm_reml",
+      out_method = "Variance Components REML - pairwise",
+      out_description = "Lin's CCC per method pair from random-effects LMM"
+    ))
+  }
+
   # Only pairwise path remains
   prev_threads <- .mc_prepare_omp_threads(
-    n_threads,
-    n_threads_missing = missing(n_threads)
+    n_threads
   )
   if (!is.null(prev_threads)) {
     on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
@@ -1216,9 +1327,6 @@ ccc_rm_reml <- function(data, response, subject,
     )
   )
 }
-
-#' @keywords internal
-`%||%` <- function(a, b) if (!is.null(a)) a else b
 
 #' @title num_or_na
 #' @description Helper to safely coerce a value to numeric or return NA if invalid.
@@ -1375,10 +1483,11 @@ num_or_na_vec <- function(x) {
   out <- c(out,
            "--------------------------------------------------------------------------")
 
-  if (use_message) {
-    cli::cli_inform(paste(out, collapse = "\n"))
+  msg <- paste(out, collapse = "\n")
+  if (isTRUE(use_message)) {
+    cli::cli_inform(msg)
   } else {
-    cat(paste(out, collapse = "\n"), "\n")
+    message(msg)
   }
 }
 
@@ -1419,38 +1528,207 @@ build_LDZ <- function(colnames_X, method_levels, time_levels, Dsub, df_sub,
 #' @title run_cpp
 #' @description Wrapper for calling 'C++' backend for CCC estimation.
 #' @keywords internal
+#' @name run_cpp
+NULL
+
+#' Internal validation for variance-component index codes.
+#' @keywords internal
+#' @noRd
+.validate_vc_index_codes <- function(x, arg, expected_max = NULL, allow_empty = FALSE) {
+  if (!is.integer(x)) {
+    cli::cli_abort("{.arg {arg}} must be an integer vector before calling {.fn ccc_vc_cpp}.")
+  }
+  if (!length(x)) {
+    if (allow_empty) return(invisible(NULL))
+    cli::cli_abort("{.arg {arg}} must not be empty before calling {.fn ccc_vc_cpp}.")
+  }
+  if (anyNA(x)) {
+    cli::cli_abort("{.arg {arg}} must not contain missing values before calling {.fn ccc_vc_cpp}.")
+  }
+  if (any(!is.finite(as.numeric(x))) || any(x <= 0L)) {
+    cli::cli_abort("{.arg {arg}} must contain only positive finite integer codes before calling {.fn ccc_vc_cpp}.")
+  }
+
+  u <- sort.int(unique(x), method = "quick")
+  if (!identical(u, seq_len(max(x)))) {
+    cli::cli_abort("{.arg {arg}} must use contiguous 1..K integer codes before calling {.fn ccc_vc_cpp}.")
+  }
+  if (!is.null(expected_max) && max(x) != expected_max) {
+    cli::cli_abort("{.arg {arg}} codes must have maximum {.val {expected_max}} before calling {.fn ccc_vc_cpp}.")
+  }
+}
+
+.validate_run_cpp_inputs <- function(Xr, yr, subject, method_int, time_int, nm, nt,
+                                     Lr = NULL, auxDr = NULL, Zr = NULL,
+                                     include_subj_method = TRUE,
+                                     include_subj_time = TRUE,
+                                     time_weights = NULL) {
+  if (!is.matrix(Xr) || !is.numeric(Xr)) {
+    cli::cli_abort("{.arg Xr} must be a numeric matrix before calling {.fn ccc_vc_cpp}.")
+  }
+  if (!is.numeric(yr) || is.matrix(yr)) {
+    cli::cli_abort("{.arg yr} must be a numeric vector before calling {.fn ccc_vc_cpp}.")
+  }
+  if (any(!is.finite(Xr))) {
+    cli::cli_abort("{.arg Xr} must contain only finite numeric values before calling {.fn ccc_vc_cpp}.")
+  }
+  if (any(!is.finite(yr))) {
+    cli::cli_abort("{.arg yr} must contain only finite numeric values before calling {.fn ccc_vc_cpp}.")
+  }
+  if (nrow(Xr) != length(yr)) {
+    cli::cli_abort("{.arg Xr} row count must match {.arg yr} length before calling {.fn ccc_vc_cpp}.")
+  }
+
+  .validate_vc_index_codes(subject, "subject")
+  .validate_vc_index_codes(method_int, "method", expected_max = nm)
+  if (length(subject) != length(yr)) {
+    cli::cli_abort("{.arg subject} length must match {.arg yr} before calling {.fn ccc_vc_cpp}.")
+  }
+  if (length(method_int) != length(yr)) {
+    cli::cli_abort("{.arg method} length must match {.arg yr} before calling {.fn ccc_vc_cpp}.")
+  }
+
+  has_time <- length(time_int) > 0L
+  if (has_time) {
+    .validate_vc_index_codes(time_int, "time", expected_max = nt)
+    if (length(time_int) != length(yr)) {
+      cli::cli_abort("{.arg time} length must match {.arg yr} before calling {.fn ccc_vc_cpp}.")
+    }
+  } else {
+    if (isTRUE(include_subj_time)) {
+      cli::cli_abort("A subject-time random component requires a non-empty {.arg time} vector.")
+    }
+    if (!(nt %in% c(0L, 1L))) {
+      cli::cli_abort("When {.arg time} is absent, {.arg nt} must be 0 or 1.")
+    }
+  }
+
+  if (!is.null(Lr)) {
+    if (!is.matrix(Lr) || !is.numeric(Lr)) {
+      cli::cli_abort("{.arg Lr} must be a numeric matrix or {.code NULL}.")
+    }
+    if (any(!is.finite(Lr))) {
+      cli::cli_abort("{.arg Lr} must contain only finite numeric values.")
+    }
+    if (nrow(Lr) != ncol(Xr)) {
+      cli::cli_abort("{.arg Lr} must have {.val {ncol(Xr)}} rows.")
+    }
+    if (ncol(Lr) <= 0L) {
+      cli::cli_abort("{.arg Lr} must have at least one column when supplied.")
+    }
+  } else if (nm > 0L) {
+    cli::cli_abort("{.arg Lr} must be present when method contrasts are used.")
+  }
+
+  if (!is.null(auxDr)) {
+    if (!is.matrix(auxDr) || !is.numeric(auxDr)) {
+      cli::cli_abort("{.arg auxDr} must be a numeric matrix or {.code NULL}.")
+    }
+    if (any(!is.finite(auxDr))) {
+      cli::cli_abort("{.arg auxDr} must contain only finite numeric values.")
+    }
+    if (is.null(Lr)) {
+      cli::cli_abort("{.arg auxDr} cannot be supplied without {.arg Lr}.")
+    }
+    if (!identical(dim(auxDr), c(ncol(Lr), ncol(Lr)))) {
+      cli::cli_abort("{.arg auxDr} must be a square matrix with dimension {.val {ncol(Lr)}}.")
+    }
+  } else if (!is.null(Lr)) {
+    cli::cli_abort("{.arg auxDr} must be present when {.arg Lr} is supplied.")
+  }
+
+  if (!is.null(Zr)) {
+    if (!is.matrix(Zr) || !is.numeric(Zr)) {
+      cli::cli_abort("{.arg Zr} must be a numeric matrix or {.code NULL}.")
+    }
+    if (any(!is.finite(Zr))) {
+      cli::cli_abort("{.arg Zr} must contain only finite numeric values.")
+    }
+    if (nrow(Zr) != nrow(Xr)) {
+      cli::cli_abort("{.arg Zr} must have {.val {nrow(Xr)}} rows.")
+    }
+    if (ncol(Zr) == 0L) {
+      Zr <- NULL
+    }
+  }
+
+  if (!is.null(time_weights)) {
+    if (!has_time) {
+      cli::cli_abort("{.arg time_weights} requires a non-empty {.arg time} vector.")
+    }
+    if (!is.numeric(time_weights) || anyNA(time_weights) || any(!is.finite(time_weights)) || any(time_weights < 0)) {
+      cli::cli_abort("{.arg time_weights} must contain only finite non-negative values.")
+    }
+    if (length(time_weights) != nt) {
+      cli::cli_abort("{.arg time_weights} length must match {.arg nt}.")
+    }
+  }
+
+  invisible(NULL)
+}
+
+#' @rdname run_cpp
 run_cpp <- function(Xr, yr, subject, method_int, time_int, Laux, Z,
                     use_ar1, ar1_rho, max_iter, tol, conf_level, ci_mode_int,
                     include_subj_method = TRUE, include_subj_time = TRUE,
                     sb_zero_tol = 1e-10, eval_single_visit = FALSE,
                     time_weights = NULL,
-                    metric_mode = 0L) {
+                    metric_mode = 0L,
+                    loglik_only = FALSE,
+                    need_reml_loglik = TRUE) {
 
   # Guard: you cannot include a random component whose dimension is 0
   include_subj_method <- isTRUE(include_subj_method) && isTRUE(Laux$nm > 0)
   include_subj_time   <- isTRUE(include_subj_time)   && isTRUE(Laux$nt > 0)
+
+  Lr <- if (is.null(Laux$L)) NULL else unname(as.matrix(Laux$L))
+  auxDr <- if (is.null(Laux$Dm)) NULL else unname(as.matrix(Laux$Dm))
+  Zr <- if (is.null(Z)) NULL else unname(as.matrix(Z))
+  if (!is.null(Zr) && ncol(Zr) == 0L) {
+    Zr <- NULL
+  }
+  time_arg <- if (length(time_int)) as.integer(time_int) else integer(0)
+  time_weights_arg <- if (is.null(time_weights)) NULL else as.numeric(time_weights)
+
+  .validate_run_cpp_inputs(
+    Xr = Xr,
+    yr = yr,
+    subject = as.integer(subject),
+    method_int = as.integer(method_int),
+    time_int = time_arg,
+    nm = as.integer(Laux$nm),
+    nt = as.integer(Laux$nt),
+    Lr = Lr,
+    auxDr = auxDr,
+    Zr = Zr,
+    include_subj_method = include_subj_method,
+    include_subj_time = include_subj_time,
+    time_weights = time_weights_arg
+  )
 
   ccc_vc_cpp(
     Xr = unname(Xr),
     yr = yr,
     subject = subject,
     method  = method_int,
-    time    = time_int,
+    time    = time_arg,
     nm = Laux$nm, nt = Laux$nt,
     max_iter = max_iter, tol = tol,
     conf_level = conf_level,
     ci_mode = ci_mode_int,
-    Lr    = if (is.null(Laux$L))  NULL else unname(Laux$L),
-    auxDr = if (is.null(Laux$Dm)) NULL else unname(Laux$Dm),
-    Zr    = if (is.null(Z))       NULL else unname(Z),
+    Lr    = Lr,
+    auxDr = auxDr,
+    Zr    = Zr,
     use_ar1 = use_ar1,
     ar1_rho = as.numeric(ar1_rho),
     include_subj_method = include_subj_method,
     include_subj_time   = include_subj_time,
     sb_zero_tol = as.numeric(sb_zero_tol),
     eval_single_visit = eval_single_visit,
-    time_weights = if (is.null(time_weights)) NULL else as.numeric(time_weights),
-    metric_mode = as.integer(metric_mode)
+    time_weights = time_weights_arg,
+    metric_mode = as.integer(metric_mode),
+    ll_only = isTRUE(loglik_only),
+    need_loglik = isTRUE(need_reml_loglik)
   )
 }
 
@@ -1484,7 +1762,9 @@ estimate_rho <- function(Xr, yr, subject, method_int, time_int, Laux, Z,
                    sb_zero_tol = sb_zero_tol,
                    eval_single_visit = eval_single_visit,
                    time_weights = time_weights,
-                   metric_mode = metric_mode)
+                   metric_mode = metric_mode,
+                   loglik_only = FALSE,
+                   need_reml_loglik = TRUE)
     ll <- suppressWarnings(as.numeric(fit[["reml_loglik"]]))
     if (!is.finite(ll)) return(Inf)
     -ll
@@ -1604,41 +1884,65 @@ reml_lrt_select <- function(Xr, yr, subject, method_int, time_int, Laux, Z,
   for (what in test_order) {
     if (what == "subj_time" && inc_subj_time) {
       rho0 <- get_rho(inc_subj_method, FALSE)
-      fit0 <- run_cpp(Xr, yr, subject, method_int, time_int, Laux, Z,
-                      use_ar1 = identical(ar, "ar1"),
-                      ar1_rho = if (identical(ar, "ar1")) rho0 else 0,
-                      max_iter = max_iter, tol = tol, conf_level = conf_level,
-                      ci_mode_int = ci_mode_int,
-                      include_subj_method = inc_subj_method, include_subj_time = FALSE,
-                      sb_zero_tol = sb_zero_tol,
-                      eval_single_visit = eval_single_visit,
-                      time_weights = time_weights,
-                      metric_mode = metric_mode)
-      lrt <- 2 * (as.numeric(fit_full$reml_loglik) - as.numeric(fit0$reml_loglik))
+      fit0_ll <- run_cpp(Xr, yr, subject, method_int, time_int, Laux, Z,
+                         use_ar1 = identical(ar, "ar1"),
+                         ar1_rho = if (identical(ar, "ar1")) rho0 else 0,
+                         max_iter = max_iter, tol = tol, conf_level = conf_level,
+                         ci_mode_int = ci_mode_int,
+                         include_subj_method = inc_subj_method, include_subj_time = FALSE,
+                         sb_zero_tol = sb_zero_tol,
+                         eval_single_visit = eval_single_visit,
+                         time_weights = time_weights,
+                         metric_mode = metric_mode,
+                         loglik_only = FALSE,
+                         need_reml_loglik = TRUE)
+      lrt <- 2 * (as.numeric(fit_full$reml_loglik) - as.numeric(fit0_ll$reml_loglik))
       p   <- p_half_chisq1(max(lrt, 0))
       if (is.finite(p) && p > alpha) {
         inc_subj_time <- FALSE
-        fit_full <- fit0
+        fit_full <- run_cpp(Xr, yr, subject, method_int, time_int, Laux, Z,
+                            use_ar1 = identical(ar, "ar1"),
+                            ar1_rho = if (identical(ar, "ar1")) rho0 else 0,
+                            max_iter = max_iter, tol = tol, conf_level = conf_level,
+                            ci_mode_int = ci_mode_int,
+                            include_subj_method = inc_subj_method, include_subj_time = FALSE,
+                            sb_zero_tol = sb_zero_tol,
+                            eval_single_visit = eval_single_visit,
+                            time_weights = time_weights,
+                            metric_mode = metric_mode,
+                            need_reml_loglik = FALSE)
         rho_full <- rho0
       }
     }
     if (what == "subj_method" && inc_subj_method) {
       rho0 <- get_rho(FALSE, inc_subj_time)
-      fit0 <- run_cpp(Xr, yr, subject, method_int, time_int, Laux, Z,
-                      use_ar1 = identical(ar, "ar1"),
-                      ar1_rho = if (identical(ar, "ar1")) rho0 else 0,
-                      max_iter = max_iter, tol = tol, conf_level = conf_level,
-                      ci_mode_int = ci_mode_int,
-                      include_subj_method = FALSE, include_subj_time = inc_subj_time,
-                      sb_zero_tol = sb_zero_tol,
-                      eval_single_visit = eval_single_visit,
-                      time_weights = time_weights,
-                      metric_mode = metric_mode)
-      lrt <- 2 * (as.numeric(fit_full$reml_loglik) - as.numeric(fit0$reml_loglik))
+      fit0_ll <- run_cpp(Xr, yr, subject, method_int, time_int, Laux, Z,
+                         use_ar1 = identical(ar, "ar1"),
+                         ar1_rho = if (identical(ar, "ar1")) rho0 else 0,
+                         max_iter = max_iter, tol = tol, conf_level = conf_level,
+                         ci_mode_int = ci_mode_int,
+                         include_subj_method = FALSE, include_subj_time = inc_subj_time,
+                         sb_zero_tol = sb_zero_tol,
+                         eval_single_visit = eval_single_visit,
+                         time_weights = time_weights,
+                         metric_mode = metric_mode,
+                         loglik_only = FALSE,
+                         need_reml_loglik = TRUE)
+      lrt <- 2 * (as.numeric(fit_full$reml_loglik) - as.numeric(fit0_ll$reml_loglik))
       p   <- p_half_chisq1(max(lrt, 0))
       if (is.finite(p) && p > alpha) {
         inc_subj_method <- FALSE
-        fit_full <- fit0
+        fit_full <- run_cpp(Xr, yr, subject, method_int, time_int, Laux, Z,
+                            use_ar1 = identical(ar, "ar1"),
+                            ar1_rho = if (identical(ar, "ar1")) rho0 else 0,
+                            max_iter = max_iter, tol = tol, conf_level = conf_level,
+                            ci_mode_int = ci_mode_int,
+                            include_subj_method = FALSE, include_subj_time = inc_subj_time,
+                            sb_zero_tol = sb_zero_tol,
+                            eval_single_visit = eval_single_visit,
+                            time_weights = time_weights,
+                            metric_mode = metric_mode,
+                            need_reml_loglik = FALSE)
         rho_full <- rho0
       }
     }
@@ -1648,6 +1952,105 @@ reml_lrt_select <- function(Xr, yr, subject, method_int, time_int, Laux, Z,
        include_subj_time   = inc_subj_time,
        rho = rho_full,
        fit = fit_full)
+}
+
+#' @keywords internal
+.ccc_rm_reml_no_time_fallback <- function(df,
+                                          response,
+                                          rind,
+                                          method,
+                                          ci,
+                                          conf_level,
+                                          out_class,
+                                          out_method,
+                                          out_description) {
+  fit <- ccc_rm_ustat(
+    df,
+    response = response,
+    subject = rind,
+    method = method,
+    ci = ci,
+    conf_level = conf_level
+  )
+
+  method_levels <- levels(droplevels(df[[method]]))
+  Lm <- length(method_levels)
+  dn <- list(method_levels, method_levels)
+
+  n_obs_mat <- matrix(NA_integer_, Lm, Lm, dimnames = dn)
+  n_subjects_mat <- matrix(NA_integer_, Lm, Lm, dimnames = dn)
+  method_code_all <- as.integer(df[[method]])
+  idx_by_method <- lapply(seq_len(Lm), function(k) which(method_code_all == k))
+  subject_all <- df[[rind]]
+
+  for (i in seq_len(Lm - 1L)) {
+    for (j in (i + 1L):Lm) {
+      idx <- sort.int(c(idx_by_method[[i]], idx_by_method[[j]]), method = "quick")
+      subj_pair <- droplevels(factor(subject_all[idx]))
+      met_pair <- droplevels(factor(df[[method]][idx]))
+      complete_mask <- stats::complete.cases(df[idx, c(response, rind, method), drop = FALSE])
+      subj_pair <- subj_pair[complete_mask]
+      met_pair <- met_pair[complete_mask]
+
+      sid <- as.integer(subj_pair)
+      mid <- as.integer(met_pair)
+      rows_by_subj <- tabulate(sid, nbins = nlevels(subj_pair))
+      combo_code <- sid + nlevels(subj_pair) * mid
+      uniq_combo <- !duplicated(combo_code)
+      uniq_by_subj <- tabulate(sid[uniq_combo], nbins = nlevels(subj_pair))
+      complete_subj <- (rows_by_subj == 2L) & (uniq_by_subj == 2L)
+      n_subjects_pair <- sum(complete_subj)
+      n_obs_pair <- 2L * n_subjects_pair
+
+      n_subjects_mat[i, j] <- n_subjects_mat[j, i] <- as.integer(n_subjects_pair)
+      n_obs_mat[i, j] <- n_obs_mat[j, i] <- as.integer(n_obs_pair)
+    }
+  }
+
+  diag(n_subjects_mat) <- NA_integer_
+  diag(n_obs_mat) <- NA_integer_
+
+  empty_vc <- matrix(NA_real_, Lm, Lm, dimnames = dn)
+  empty_extra <- matrix(vector("list", Lm * Lm), Lm, Lm, dimnames = dn)
+  ar1_na <- matrix(NA_real_, Lm, Lm, dimnames = dn)
+  ar1_pairs <- matrix(NA_integer_, Lm, Lm, dimnames = dn)
+  ar1_use <- matrix(FALSE, Lm, Lm, dimnames = dn)
+
+  if (isTRUE(ci)) {
+    out <- structure(
+      list(
+        est = as.matrix(fit$est),
+        lwr.ci = as.matrix(fit$lwr.ci),
+        upr.ci = as.matrix(fit$upr.ci)
+      ),
+      class = c("ccc_rm_reml", "matrixCorr_ccc_ci", "matrixCorr_ccc", "ccc")
+    )
+    attr(out, "conf.level") <- conf_level
+  } else {
+    out <- structure(
+      as.matrix(fit),
+      class = c("ccc_rm_reml", "matrixCorr_ccc", "ccc", "matrix")
+    )
+  }
+
+  attr(out, "method") <- paste0(out_method, " (no-time fallback)")
+  attr(out, "description") <- paste0(out_description, " [fallback via ccc_rm_ustat]")
+  attr(out, "package") <- "matrixCorr"
+  attr(out, "residual_model") <- "iid"
+  attr(out, "sigma2_subject") <- empty_vc
+  attr(out, "sigma2_subject_method") <- empty_vc
+  attr(out, "sigma2_subject_time") <- empty_vc
+  attr(out, "sigma2_error") <- empty_vc
+  attr(out, "sigma2_extra") <- empty_extra
+  attr(out, "SB") <- empty_vc
+  attr(out, "se_ccc") <- empty_vc
+  attr(out, "n_obs") <- n_obs_mat
+  attr(out, "n_subjects") <- n_subjects_mat
+  attr(out, "ar1_rho_lag1") <- ar1_na
+  attr(out, "ar1_pairs") <- ar1_pairs
+  attr(out, "ar1_pval") <- ar1_na
+  attr(out, "use_ar1") <- ar1_use
+  out
 }
 
 #' @title ccc_lmm_reml_pairwise
@@ -1676,6 +2079,8 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
                                   summary_title = "Repeated-measures concordance matrix",
                                   vc_engine_name = "ccc_rm_reml",
                                   vc_se_label = "SE(CCC)") {
+  interaction_requested <- !is.null(time) &&
+    grepl(":", paste(deparse(fml), collapse = ""), fixed = TRUE)
 
   Dmat_type <- match.arg(Dmat_type)
   eval_single_visit <- Dmat_type %in% c("typical-visit","weighted-sq")
@@ -1685,6 +2090,21 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
   df[[method]] <- droplevels(df[[method]])
   method_levels <- levels(df[[method]])
   Lm <- length(method_levels)
+
+  if (is.null(time) && identical(out_class, "ccc_rm_reml")) {
+    return(.ccc_rm_reml_no_time_fallback(
+      df = df,
+      response = response,
+      rind = rind,
+      method = method,
+      ci = ci,
+      conf_level = conf_level,
+      out_class = out_class,
+      out_method = out_method,
+      out_description = out_description
+    ))
+  }
+
   method_code_all <- as.integer(df[[method]])
   idx_by_method <- lapply(seq_len(Lm), function(k) which(method_code_all == k))
   Dfull_input <- if (!is.null(Dmat)) as.matrix(Dmat) else NULL
@@ -1712,26 +2132,38 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
   ar1_pairs_mat    <- matrix(NA_integer_, Lm, Lm, dimnames = list(method_levels, method_levels))
   ar1_pval_mat     <- matrix(NA_real_,    Lm, Lm, dimnames = list(method_levels, method_levels))
   ar1_reco_mat     <- matrix(NA,          Lm, Lm, dimnames = list(method_levels, method_levels))
+  ar_used_mat      <- matrix(FALSE,       Lm, Lm, dimnames = list(method_levels, method_levels))
 
   for (i in 1:(Lm - 1L)) {
     for (j in (i + 1L):Lm) {
       m1 <- method_levels[i]; m2 <- method_levels[j]
 
       idx       <- sort.int(c(idx_by_method[[i]], idx_by_method[[j]]), method = "quick")
-      subj_int  <- as.integer(df[[rind]][idx])
+      subj_fac  <- droplevels(df[[rind]][idx])
+      subj_int  <- as.integer(subj_fac)
       y_sub     <- df[[response]][idx]
       met_fac   <- droplevels(df[[method]][idx])        # exactly 2 levels
       time_fac  <- if (!is.null(time)) droplevels(df[[time]][idx]) else NULL
-      df_sub    <- df[idx, , drop = FALSE]              # moved up
+      df_sub    <- df[idx, , drop = FALSE]
+      df_sub[[rind]] <- subj_fac
+      df_sub[[method]] <- met_fac
+      if (!is.null(time)) df_sub[[time]] <- time_fac
       n_obs_mat[i, j] <- n_obs_mat[j, i] <- as.integer(length(y_sub))
       n_subjects_mat[i, j] <- n_subjects_mat[j, i] <- as.integer(length(unique(subj_int)))
 
-      Xp <- model.matrix(fml, data = df_sub)
+      has_time_levels <- !is.null(time_fac) && nlevels(time_fac) >= 2L
+      pair_terms_rhs <- c("1", method)
+      if (has_time_levels) pair_terms_rhs <- c(pair_terms_rhs, time)
+      if (has_time_levels && isTRUE(interaction_requested)) {
+        pair_terms_rhs <- c(pair_terms_rhs, sprintf("%s:%s", method, time))
+      }
+      pair_fml <- as.formula(paste("~", paste(pair_terms_rhs, collapse = " + ")))
+      Xp <- model.matrix(pair_fml, data = df_sub)
 
-      lev_time_sub <- if (!is.null(time_fac)) levels(time_fac) else character(0)
+      lev_time_sub <- if (has_time_levels) levels(time_fac) else character(0)
 
       # -------- Build/subset Dmat for this pair (only if >= 2 time levels) --------
-      if (!is.null(time) && length(lev_time_sub) >= 2L) {
+      if (has_time_levels) {
         if (!is.null(Dmat)) {
           Dfull <- Dfull_input
           if (!is.null(all_time_lvls) &&
@@ -1764,7 +2196,7 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
 
       # --- per-pair time weights for kappa (only for weighted-avg target) ---
       time_weights_kappa <- NULL
-      if (!is.null(time) && length(lev_time_sub) >= 2L && identical(Dmat_type, "weighted-avg")) {
+      if (has_time_levels && identical(Dmat_type, "weighted-avg")) {
         w_sub <- .align_weights_to_levels(Dmat_weights, lev_time_sub, all_time_lvls)
         if (is.null(w_sub)) w_sub <- rep(1 / length(lev_time_sub), length(lev_time_sub))
         sw <- sum(w_sub, na.rm = TRUE)
@@ -1776,7 +2208,7 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
         time_weights_kappa <- as.numeric(w_sub / sw)
       }
 
-      has_interaction <- any(grepl(":", colnames(Xp), fixed = TRUE))
+      has_interaction <- isTRUE(interaction_requested) && has_time_levels
 
       Laux <- build_LDZ(
         colnames_X      = colnames(Xp),
@@ -1795,28 +2227,24 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
       method_int <- if (nlevels(met_fac) >= 2L) as.integer(met_fac) else integer(0)
 
       # --------- NORMALISE TIME VECTOR (avoids 0-length in C++) ---------
-      time_int <- if (is.null(time)) rep(NA_integer_, nrow(df_sub)) else as.integer(df_sub[[time]])
-      time_int[is.na(time_int)] <- -1L
+      time_int <- if (has_time_levels) as.integer(time_fac) else integer(0)
 
       # ----------------------- LENGTH CHECKS -----------------------------
       n <- length(y_sub)
       check_same_length(subj_int,  y_sub,      arg_x = "subject", arg_y = "response")
       check_same_length(method_int, y_sub,     arg_x = "method",  arg_y = "response")
-      check_same_length(time_int,   y_sub,     arg_x = "time",    arg_y = "response")
+      if (length(time_int)) {
+        check_same_length(time_int, y_sub, arg_x = "time", arg_y = "response")
+      }
 
       # ------------- Decide if AR(1) is actually identifiable ------------
       has_ar1_info <- {
-        if (all(time_int < 0L)) {
-          FALSE
-        } else {
-          t_nonneg <- time_int[time_int >= 0L]
-          s_nonneg <- subj_int[time_int >= 0L]
-          if (!length(t_nonneg)) FALSE else
-            any(vapply(split(t_nonneg, s_nonneg),
-                       function(v) length(unique(v)) >= 2L, logical(1)))
-        }
+        if (!length(time_int)) FALSE else
+          any(vapply(split(time_int, subj_int),
+                     function(v) length(unique(v)) >= 2L, logical(1)))
       }
       use_ar1_eff <- identical(ar, "ar1") && isTRUE(has_ar1_info)
+      ar_used_mat[i, j] <- ar_used_mat[j, i] <- isTRUE(use_ar1_eff)
       # (Optional) message once if AR1 requested but not usable:
       if (identical(ar, "ar1") && !use_ar1_eff) {
         inform_ccc_rm_ar1_fallback(
@@ -1835,27 +2263,18 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
           subj_method = if (!is.null(include_subj_method)) isTRUE(include_subj_method) else Laux$nm > 0,
           subj_time   = if (!is.null(include_subj_time))   isTRUE(include_subj_time)   else Laux$nt > 0
         )
+      } else if (identical(vc_select, "auto")) {
+        # Use the stable full-model fit path for automatic selection. The
+        # likelihood-refit branch used for variance-component LRT selection has
+        # shown platform-specific native instability in CI, whereas the direct
+        # pairwise REML fit remains stable.
+        list(
+          subj_method = Laux$nm > 0,
+          subj_time   = Laux$nt > 0
+        )
       } else NULL
 
-      if (is.null(inc_pair) && (Laux$nm > 0 || Laux$nt > 0) && identical(vc_select, "auto")) {
-        sel <- reml_lrt_select(
-          Xp, y_sub, subj_int, method_int, time_int, Laux, Zp,
-          ar = if (use_ar1_eff) "ar1" else "none",
-          ar_rho = ar_rho,
-          max_iter = max_iter, tol = tol, conf_level = conf_level,
-          ci_mode_int = ci_mode_int,
-          alpha = vc_alpha, test_order = vc_test_order,
-          sb_zero_tol = sb_zero_tol,
-          eval_single_visit = eval_single_visit,
-          time_weights = time_weights_kappa,
-          metric_mode = metric_mode
-        )
-        ans <- sel$fit
-        inc_subj_method_eff <- sel$include_subj_method
-        inc_subj_time_eff   <- sel$include_subj_time
-        rho_used            <- sel$rho
-        ans <- infer_ci_method(ans, ci_mode_int, conf_level)
-      } else {
+      {
         inc_subj_method_eff <- if (is.null(inc_pair)) (Laux$nm > 0) else inc_pair$subj_method
         inc_subj_time_eff   <- if (is.null(inc_pair)) (Laux$nt > 0) else inc_pair$subj_time
 
@@ -1886,7 +2305,8 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
             sb_zero_tol = sb_zero_tol,
             eval_single_visit = eval_single_visit,
             time_weights = time_weights_kappa,
-            metric_mode = metric_mode
+            metric_mode = metric_mode,
+            need_reml_loglik = FALSE
           ),
           error = function(e) {
             cli::cli_warn(
@@ -1920,21 +2340,7 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
         ar1_rho_lag1_mat[i, j] <- ar1_rho_lag1_mat[j, i] <- num_or_na(ans[["ar1_rho_lag1"]])
         ar1_pairs_mat[i, j]    <- ar1_pairs_mat[j, i]    <- suppressWarnings(as.integer(ans[["ar1_pairs"]]))
         ar1_pval_mat[i, j]     <- ar1_pval_mat[j, i]     <- num_or_na(ans[["ar1_pval"]])
-        ar1_reco <- if (!identical(ar, "ar1")) {
-          recommend_ar1_from_refit(
-            ans,
-            Xp, y_sub, subj_int, method_int, time_int, Laux, Zp,
-            max_iter = max_iter, tol = tol, conf_level = conf_level,
-            ci_mode_int = ci_mode_int,
-            include_subj_method = inc_subj_method_eff,
-            include_subj_time   = inc_subj_time_eff,
-            sb_zero_tol = sb_zero_tol,
-            eval_single_visit = eval_single_visit,
-            time_weights = time_weights_kappa
-          )
-        } else {
-          isTRUE(ans[["use_ar1"]])
-        }
+        ar1_reco <- isTRUE(ans[["use_ar1"]])
         ar1_reco_mat[i, j]     <- ar1_reco_mat[j, i]     <- ar1_reco
 
         if (isTRUE(verbose)) {
@@ -1967,9 +2373,17 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
     if (any(ar1_reco_mat == TRUE, na.rm = TRUE)) {
       inform_if_verbose(
         "Positive lag-1 residual correlation detected in at least one pair. Consider `ar = \"ar1\"` to model within-subject serial correlation.",
-        .verbose = TRUE
+        .verbose = verbose
       )
     }
+  }
+
+  residual_model_eff <- if (!identical(ar, "ar1")) {
+    "iid"
+  } else if (any(ar_used_mat, na.rm = TRUE)) {
+    "ar1"
+  } else {
+    "iid"
   }
 
   diag(est_mat) <- 1
@@ -1987,8 +2401,8 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
     attr(out, "description") <- out_description
     attr(out, "package")     <- "matrixCorr"
     attr(out, "conf.level")  <- conf_level
-    attr(out, "residual_model") <- if (identical(ar, "ar1")) "ar1" else "iid"
-    if (identical(ar, "ar1")) attr(out, "ar_rho") <- rho_mat
+    attr(out, "residual_model") <- residual_model_eff
+    if (identical(residual_model_eff, "ar1")) attr(out, "ar_rho") <- rho_mat
 
     attr(out, "sigma2_subject")        <- vc_subject
     attr(out, "sigma2_subject_method") <- vc_subject_method
@@ -2018,8 +2432,8 @@ ccc_lmm_reml_pairwise <- function(df, fml, response, rind, method, time,
     attr(out, "method")      <- out_method
     attr(out, "description") <- out_description
     attr(out, "package")     <- "matrixCorr"
-    attr(out, "residual_model") <- if (identical(ar, "ar1")) "ar1" else "iid"
-    if (identical(ar, "ar1")) attr(out, "ar_rho") <- rho_mat
+    attr(out, "residual_model") <- residual_model_eff
+    if (identical(residual_model_eff, "ar1")) attr(out, "ar_rho") <- rho_mat
 
     attr(out, "sigma2_subject")        <- vc_subject
     attr(out, "sigma2_subject_method") <- vc_subject_method

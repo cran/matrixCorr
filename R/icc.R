@@ -108,7 +108,8 @@
 #'   \code{"error"} rejects missing, \code{NaN}, and infinite values before
 #'   estimation. \code{"pairwise"} uses pair-specific complete cases for
 #'   \code{scope = "pairwise"} and complete rows across all analysed columns
-#'   for \code{scope = "overall"}.
+#'   for \code{scope = "overall"}. \code{"complete"} performs listwise
+#'   deletion once across all analysed columns before ICC estimation.
 #' @param n_threads Integer number of OpenMP threads.
 #' @param verbose Logical; if `TRUE`, report how many threads are requested.
 #'
@@ -152,10 +153,13 @@
 #' )
 #' print(fit_icc)
 #' summary(fit_icc)
+#' estimate(fit_icc)
+#' tidy(fit_icc)
 #'
 #' fit_icc_overall <- icc(dat, scope = "overall", ci = TRUE)
 #' print(fit_icc_overall)
 #' summary(fit_icc_overall)
+#' confint(fit_icc_overall)
 #'
 #' @export
 icc <- function(data,
@@ -163,7 +167,7 @@ icc <- function(data,
                 type = c("consistency", "agreement"),
                 unit = c("single", "average"),
                 scope = c("pairwise", "overall"),
-                na_method = c("error", "pairwise"),
+                na_method = c("error", "pairwise", "complete"),
                 ci = FALSE,
                 conf_level = 0.95,
                 n_threads = getOption("matrixCorr.threads", 1L),
@@ -177,7 +181,8 @@ icc <- function(data,
   na_cfg <- resolve_na_args(
     na_method = na_method,
     check_na = legacy_args$check_na %||% NULL,
-    na_method_missing = missing(na_method)
+    na_method_missing = missing(na_method),
+    allowed = c("error", "pairwise", "complete")
   )
 
   check_bool(ci, arg = "ci")
@@ -195,17 +200,26 @@ icc <- function(data,
   }
 
   numeric_data <- validate_corr_input(data, check_na = na_cfg$check_na)
+  diagnostics_extra <- NULL
+  if (identical(na_cfg$na_method, "complete")) {
+    cc <- .mc_complete_case_matrix(numeric_data, min_n = 2L, arg = "data")
+    numeric_data <- cc$data
+    diagnostics_extra <- cc$diagnostics
+  }
   mat <- as.matrix(numeric_data)
   colnames_data <- colnames(numeric_data)
 
-  if (verbose) cat("Using", n_threads, "OpenMP threads\n")
+  inform_if_verbose(
+    "Using {n_threads} OpenMP thread{?s}.",
+    .verbose = verbose
+  )
 
   form_code <- .mc_icc_form_code(model, type)
   average_unit <- identical(unit, "average")
   selected_coefficient <- .mc_icc_selected_coefficient(model, type, unit)
 
   if (identical(scope, "overall")) {
-    if (na_cfg$check_na) {
+    if (na_cfg$check_na || identical(na_cfg$na_method, "complete")) {
       overall_data <- numeric_data
     } else {
       overall_data <- numeric_data
@@ -219,7 +233,10 @@ icc <- function(data,
     }
 
     mat <- as.matrix(overall_data)
-    if (verbose) cat("Using native ANOVA backend\n")
+    inform_if_verbose(
+      "Using native ANOVA backend.",
+      .verbose = verbose
+    )
 
     fit <- icc_overall_cpp(
       mat,
@@ -251,12 +268,12 @@ icc <- function(data,
     attr(out, "selected_row") <- coefficients[coefficients$selected, , drop = FALSE]
     attr(out, "conf.level") <- conf_level
     attr(out, "ci.method") <- if (isTRUE(ci)) "anova_f" else NULL
-    attr(out, "diagnostics") <- list(
+    attr(out, "diagnostics") <- .mc_merge_diagnostics(list(
       n_complete = nrow(mat),
       n_subjects = fit$n_subjects,
       n_raters = fit$n_raters,
       dropped_rows = if (na_cfg$check_na) 0L else nrow(numeric_data) - nrow(mat)
-    )
+    ), diagnostics_extra)
     return(out)
   }
 
@@ -267,7 +284,7 @@ icc <- function(data,
     mat,
     form_code = form_code,
     average_unit = average_unit,
-    pairwise_complete = !na_cfg$check_na,
+    pairwise_complete = identical(na_cfg$na_method, "pairwise"),
     return_ci = ci,
     conf_level = conf_level,
     n_threads = n_threads
@@ -302,7 +319,10 @@ icc <- function(data,
   attr(out, "k") <- 2L
   attr(out, "conf.level") <- conf_level
   attr(out, "ci.method") <- if (isTRUE(ci)) "anova_f" else NULL
-  attr(out, "diagnostics") <- list(n_complete = fit$n_complete)
+  attr(out, "diagnostics") <- .mc_merge_diagnostics(
+    list(n_complete = fit$n_complete),
+    diagnostics_extra
+  )
   out
 }
 
@@ -796,14 +816,64 @@ print.summary.icc_overall <- function(x,
 #' backend but are not included in the ICC denominator.
 #'
 #' \strong{CIs / SEs (delta method for ICC).}
-#' Confidence intervals are built from the same REML fit by a large-sample delta
-#' method. If `ci_mode = "raw"`, a Wald interval is formed on the ICC scale,
+#' Let \eqn{I_A = 1} for \code{type = "agreement"} and \eqn{I_A = 0} for
+#' \code{type = "consistency"}, and define
+#' \deqn{ \theta \;=\; \big(\sigma_S^2,\ \sigma_{S\times M,\mathrm{eff}}^2,\
+#' \sigma_{S\times T,\mathrm{eff}}^2,\ \sigma_E^2,\ S_B\big)^\top. }
+#' Write \eqn{\mathrm{ICC}(\theta)=N/D} with
+#' \deqn{ N = \sigma_S^2, \qquad
+#'        D = \sigma_S^2 + \sigma_{S\times M,\mathrm{eff}}^2 +
+#'            \bar{\kappa}_g\,\sigma_{S\times T,\mathrm{eff}}^2 +
+#'            \bar{\kappa}_e\,\sigma_E^2 + I_A S_B. }
+#' The gradient used in the delta method is
+#' \deqn{ \frac{\partial\,\mathrm{ICC}}{\partial \sigma_S^2}
+#'       \;=\; \frac{
+#'       \sigma_{S\times M,\mathrm{eff}}^2 +
+#'       \bar{\kappa}_g\,\sigma_{S\times T,\mathrm{eff}}^2 +
+#'       \bar{\kappa}_e\,\sigma_E^2 + I_A S_B}{D^2}, }
+#' \deqn{ \frac{\partial\,\mathrm{ICC}}{\partial \sigma_{S\times M,\mathrm{eff}}^2}
+#'       \;=\; -\,\frac{N}{D^2}, \qquad
+#'        \frac{\partial\,\mathrm{ICC}}{\partial \sigma_{S\times T,\mathrm{eff}}^2}
+#'       \;=\; -\,\frac{\bar{\kappa}_g\,N}{D^2}, }
+#' \deqn{ \frac{\partial\,\mathrm{ICC}}{\partial \sigma_E^2}
+#'       \;=\; -\,\frac{\bar{\kappa}_e\,N}{D^2}, \qquad
+#'        \frac{\partial\,\mathrm{ICC}}{\partial S_B}
+#'       \;=\; -\,\frac{I_A\,N}{D^2}. }
+#'
+#' The covariance matrix \eqn{\widehat{\mathrm{Var}}(\hat\theta)} is assembled
+#' from the same REML fit:
+#' \itemize{
+#'   \item the
+#'   \eqn{(\sigma_S^2,\sigma_{S\times M,\mathrm{eff}}^2,
+#'   \sigma_{S\times T,\mathrm{eff}}^2)} block comes from the empirical
+#'   subject-level covariance of the per-subject REML component updates;
+#'   \item \eqn{\widehat{\mathrm{Var}}(\hat\sigma_E^2)} is approximated as the
+#'   variance of the weighted mean of subject-level residual quadratic forms;
+#'   \item \eqn{\widehat{\mathrm{Var}}(S_B)} uses the fixed-effect quadratic-form
+#'   delta method already computed in the backend.
+#' }
+#' Cross-covariances across these blocks are ignored as a large-sample
+#' simplification, so
+#' \deqn{ \widehat{\mathrm{se}}\{\widehat{\mathrm{ICC}}\}
+#'       \;=\; \sqrt{\,\nabla \mathrm{ICC}(\hat\theta)^\top\,
+#'                     \widehat{\mathrm{Var}}(\hat\theta)\,
+#'                     \nabla \mathrm{ICC}(\hat\theta)\,}. }
+#'
+#' If `ci_mode = "raw"`, a Wald interval is formed on the ICC scale,
 #' \deqn{ \widehat{\mathrm{ICC}} \;\pm\; z_{1-\alpha/2}\,
 #'       \widehat{\mathrm{se}}\{\widehat{\mathrm{ICC}}\}, }
-#' and truncated to \eqn{[0,1]}. If `ci_mode = "logit"`, the same Wald
-#' construction is applied on the logit scale and then back-transformed. If
-#' `ci_mode = "auto"`, the backend selects between the raw-scale and logit-scale
-#' interval per estimate.
+#' and truncated to \eqn{[0,1]}. If `ci_mode = "logit"`, the backend applies
+#' the same Wald construction after the transform
+#' \eqn{\phi = \mathrm{logit}(\mathrm{ICC})}, with
+#' \deqn{ \widehat{\mathrm{se}}(\hat\phi)
+#'       \;\approx\; \frac{\widehat{\mathrm{se}}\{\widehat{\mathrm{ICC}}\}}
+#'       {\widehat{\mathrm{ICC}}\,(1-\widehat{\mathrm{ICC}})}, }
+#' and then back-transforms
+#' \deqn{ \mathrm{logit}^{-1}\!\Big(
+#'       \hat\phi \pm z_{1-\alpha/2}\,\widehat{\mathrm{se}}(\hat\phi)\Big). }
+#' If `ci_mode = "auto"`, the backend selects between the raw-scale and
+#' logit-scale interval per estimate, typically preferring the logit form near
+#' the boundaries.
 #'
 #' \strong{Choosing \eqn{\rho} for AR(1).}
 #' When \code{ar="ar1"} and \code{ar_rho = NA}, \eqn{\rho} is estimated by
@@ -827,9 +897,9 @@ print.summary.icc_overall <- function(x,
 #'
 #' @section Threading and BLAS guards:
 #' The C++ backend uses OpenMP loops while also forcing vendor BLAS libraries to
-#' run single-threaded so that overall CPU usage stays predictable. On OpenBLAS
-#' and Apple's Accelerate this is handled automatically. On Intel MKL builds the
-#' guard is disabled by default, but you can also opt out manually by setting
+#' run single-threaded so that overall CPU usage stays predictable. This guard
+#' is applied to OpenBLAS, Apple's Accelerate, and Intel MKL when their runtime
+#' controls are available. You can opt out manually by setting
 #' \code{MATRIXCORR_DISABLE_BLAS_GUARD=1} in the environment before loading the
 #' package.
 #'
@@ -902,10 +972,8 @@ print.summary.icc_overall <- function(x,
 #'   fitted variance components and \eqn{S_B} for each fit. Default \code{FALSE}.
 #' @param digits Integer \eqn{(\ge 0)}. Number of decimal places to use in the
 #'   printed summary when \code{verbose = TRUE}. Default \code{4}.
-#' @param use_message Logical. When \code{verbose = TRUE}, choose the printing
-#'   mechanism, where \code{TRUE} uses \code{message()} (respects \code{sink()},
-#'   easily suppressible via \code{suppressMessages()}), whereas \code{FALSE}
-#'   uses \code{cat()} to \code{stdout}. Default \code{TRUE}.
+#' @param use_message Logical. When \code{verbose = TRUE}, verbose summaries
+#'   are emitted with \pkg{cli} messages.
 #'
 #' @param ar Character. Residual correlation structure: \code{"none"} (iid) or
 #'   \code{"ar1"} for subject-level AR(1) correlation within contiguous time
@@ -1021,10 +1089,13 @@ print.summary.icc_overall <- function(x,
 #'   subject = "id",
 #'   method = "method",
 #'   time = "time",
-#'   type = "consistency"
+#'   type = "consistency",
+#'   ci = TRUE
 #' )
 #' print(fit_icc_rm)
 #' summary(fit_icc_rm)
+#' confint(fit_icc_rm)
+#' tidy(fit_icc_rm)
 #'
 #' @export
 icc_rm_reml <- function(data, response, subject,
@@ -1098,14 +1169,21 @@ icc_rm_reml <- function(data, response, subject,
   check_required_cols(df, req_cols, df_arg = "data")
 
   df[[response]] <- as.numeric(df[[response]])
-  if (anyNA(df[[response]])) {
-    abort_bad_arg("response",
-      message = "must reference a numeric column in {.arg data}."
-    )
-  }
   df[[subject]] <- factor(df[[subject]])
   if (!is.null(method)) df[[method]] <- factor(df[[method]])
   if (!is.null(time)) df[[time]] <- factor(df[[time]])
+  slope_Z <- .validate_rm_wrapper_inputs(
+    df = df,
+    response = response,
+    subject = subject,
+    method = method,
+    time = time,
+    slope = slope,
+    slope_var = slope_var,
+    slope_Z = slope_Z,
+    include_subj_time = include_subj_time,
+    vc_select = vc_select
+  )
   all_time_lvls <- if (!is.null(time)) levels(df[[time]]) else character(0)
 
   terms_rhs <- "1"
@@ -1134,9 +1212,12 @@ icc_rm_reml <- function(data, response, subject,
 
   metric_mode <- if (identical(type, "agreement")) 2L else 1L
 
-  prev_threads <- get_omp_threads()
-  on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
-  set_omp_threads(n_threads)
+  prev_threads <- .mc_prepare_omp_threads(
+    n_threads
+  )
+  if (!is.null(prev_threads)) {
+    on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+  }
 
   out <- ccc_lmm_reml_pairwise(
     df = df,

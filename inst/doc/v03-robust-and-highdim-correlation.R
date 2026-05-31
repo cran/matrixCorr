@@ -36,6 +36,10 @@ summary(R_skip)
 ## -----------------------------------------------------------------------------
 fit_bicor_ci <- bicor(Y, ci = TRUE)
 summary(fit_bicor_ci)
+estimate(fit_bicor_ci)
+confint(fit_bicor_ci)
+ci(fit_bicor_ci)
+tidy(fit_bicor_ci)
 
 fit_pb_inf <- pbcor(Y, ci = TRUE, p_value = TRUE, n_boot = 200, seed = 1)
 summary(fit_pb_inf)
@@ -63,7 +67,7 @@ R_raw <- pearson_corr(X)
 
 round(c(
   raw_x1_x3 = R_raw["x1", "x3"],
-  partial_x1_x3 = fit_pcor_sample$pcor["x1", "x3"]
+  partial_x1_x3 = estimate(fit_pcor_sample)["x1", "x3"]
 ), 2)
 
 print(fit_pcor_sample, digits = 2)
@@ -78,6 +82,9 @@ fit_pcor_inf <- pcorr(
 )
 
 summary(fit_pcor_inf)
+tidy(fit_pcor_inf)
+ci(fit_pcor_inf)
+confint(fit_pcor_inf)
 
 ## -----------------------------------------------------------------------------
 set.seed(22)

@@ -101,6 +101,10 @@ fit_icc_agr <- icc_rm_reml(
 
 summary(fit_icc_cons)
 summary(fit_icc_agr)
+estimate(fit_icc_cons)
+confint(fit_icc_cons)
+ci(fit_icc_cons)
+tidy(fit_icc_cons)
 
 ## -----------------------------------------------------------------------------
 data.frame(

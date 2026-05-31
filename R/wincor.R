@@ -16,7 +16,13 @@
 #'   observations are set to the \eqn{(g+1)}-st order statistic and the
 #'   \eqn{g} largest observations are set to the \eqn{(n-g)}-th order
 #'   statistic. Default \code{0.2}.
-#' @param na_method One of \code{"error"} (default) or \code{"pairwise"}.
+#' @param na_method Character scalar controlling missing-data handling.
+#'   \code{"error"} rejects missing, \code{NaN}, and infinite values.
+#'   \code{"pairwise"} recomputes each estimate on its own pairwise
+#'   complete-case overlap. This is permissive, but different matrix entries
+#'   may be based on different rows. \code{"complete"} performs listwise
+#'   deletion once across the retained numeric columns and then computes the
+#'   estimator on the common complete sample.
 #' @param n_threads Integer \eqn{\geq 1}. Number of OpenMP threads. Defaults to
 #'   \code{getOption("matrixCorr.threads", 1L)}.
 #' @param ci Logical (default \code{FALSE}). If \code{TRUE}, attach percentile
@@ -168,7 +174,14 @@
 #' R <- wincor(X, tr = 0.2)
 #' print(R, digits = 2)
 #' summary(R)
+#' estimate(R)
+#' tidy(R)
 #' plot(R)
+#'
+#' ## Bootstrap confidence intervals
+#' R_ci <- wincor(X, tr = 0.2, ci = TRUE, n_boot = 49, seed = 11)
+#' ci(R_ci)
+#' confint(R_ci)
 #'
 #' # Interactive viewing (requires shiny)
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
@@ -178,7 +191,7 @@
 #' @author Thiago de Paula Oliveira
 #' @export
 wincor <- function(data,
-                   na_method = c("error", "pairwise"),
+                   na_method = c("error", "pairwise", "complete"),
                    ci = FALSE,
                    p_value = FALSE,
                    conf_level = 0.95,
@@ -189,11 +202,6 @@ wincor <- function(data,
                    output = c("matrix", "sparse", "edge_list"),
                    threshold = 0,
                    diag = TRUE) {
-  output_cfg <- .mc_validate_thresholded_output_request(
-    output = output,
-    threshold = threshold,
-    diag = diag
-  )
   na_method <- match.arg(na_method)
   check_scalar_numeric(tr,
                        arg = "tr",
@@ -201,141 +209,56 @@ wincor <- function(data,
                        upper = 0.5,
                        closed_lower = TRUE,
                        closed_upper = FALSE)
-  if (isFALSE(ci) && isFALSE(p_value)) {
-    n_threads <- check_scalar_int_pos(n_threads, arg = "n_threads")
-    numeric_data <- if (na_method == "error") {
-      validate_corr_input(data)
-    } else {
-      validate_corr_input(data, check_na = FALSE)
-    }
-    colnames_data <- colnames(numeric_data)
-    dn <- if (!is.null(colnames_data)) .mc_square_dimnames(colnames_data) else NULL
-    desc <- paste0(
-      "Winsorized correlation; tr = ", tr,
-      "; NA mode = ", na_method, "."
-    )
-    prev_threads <- get_omp_threads()
-    on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
+  desc <- paste0(
+    "Winsorized correlation; tr = ", tr,
+    "; NA mode = ", na_method, "."
+  )
 
-    if (.mc_supports_direct_threshold_path(
-      method = "wincor",
-      na_method = na_method,
-      ci = FALSE,
-      output = output_cfg$output,
-      threshold = output_cfg$threshold,
-      pairwise = !identical(na_method, "error"),
-      has_ci = FALSE,
-      has_inference = FALSE
-    )) {
-      trip <- wincor_threshold_triplets_cpp(
-        numeric_data,
+  .mc_inference_corr_wrapper(
+    data = data,
+    na_method = na_method,
+    ci = ci,
+    p_value = p_value,
+    conf_level = conf_level,
+    n_threads = n_threads,
+    output = output,
+    threshold = threshold,
+    diag = diag,
+    estimator_class = "wincor",
+    method = "winsorized_correlation",
+    description = desc,
+    kernel_matrix = function(x, n_threads) {
+      wincor_matrix_cpp(x, tr = tr, n_threads = n_threads)
+    },
+    kernel_pairwise = function(x, n_threads) {
+      wincor_matrix_pairwise_cpp(x, tr = tr, min_n = 5L, n_threads = n_threads)
+    },
+    kernel_threshold = function(x, threshold, diag, n_threads) {
+      wincor_threshold_triplets_cpp(
+        x,
         tr = tr,
-        threshold = output_cfg$threshold,
-        diag = output_cfg$diag,
+        threshold = threshold,
+        diag = diag,
         n_threads = n_threads
       )
-      return(.mc_finalize_triplets_output(
-        triplets = trip,
-        output = output_cfg$output,
-        estimator_class = "wincor",
-        method = "winsorized_correlation",
-        description = desc,
-        threshold = output_cfg$threshold,
-        diag = output_cfg$diag,
-        source_dim = as.integer(c(ncol(numeric_data), ncol(numeric_data))),
-        source_dimnames = dn,
-        symmetric = TRUE
-      ))
-    }
-
-    res <- if (na_method == "error") {
-      wincor_matrix_cpp(numeric_data, tr = tr, n_threads = n_threads)
-    } else {
-      wincor_matrix_pairwise_cpp(numeric_data, tr = tr, min_n = 5L, n_threads = n_threads)
-    }
-
-    out <- .mc_structure_corr_matrix(
-      res,
-      class_name = "wincor",
-      method = "winsorized_correlation",
-      description = desc,
-      dimnames = dn
-    )
-    return(.mc_finalize_corr_output(
-      out,
-      output = output_cfg$output,
-      threshold = output_cfg$threshold,
-      diag = output_cfg$diag
-    ))
-  }
-
-  n_threads <- check_scalar_int_pos(n_threads, arg = "n_threads")
-  check_bool(ci, arg = "ci")
-  check_bool(p_value, arg = "p_value")
-  check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
-  n_boot <- check_scalar_int_pos(n_boot, arg = "n_boot")
-  if (!is.null(seed)) {
-    seed <- check_scalar_int_pos(seed, arg = "seed")
-  }
-
-  numeric_data <- if (na_method == "error") {
-    validate_corr_input(data)
-  } else {
-    validate_corr_input(data, check_na = FALSE)
-  }
-  colnames_data <- colnames(numeric_data)
-  dn <- .mc_square_dimnames(colnames_data)
-
-  prev_threads <- get_omp_threads()
-  on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
-  res <- if (na_method == "error") {
-    wincor_matrix_cpp(numeric_data, tr = tr, n_threads = n_threads)
-  } else {
-    wincor_matrix_pairwise_cpp(numeric_data, tr = tr, min_n = 5L, n_threads = n_threads)
-  }
-  res <- .mc_set_matrix_dimnames(res, colnames_data)
-
-  payload <- NULL
-  if (isTRUE(ci) || isTRUE(p_value)) {
-    payload <- .mc_wincor_pairwise_payload(
-      numeric_data,
-      est = res,
-      tr = tr,
-      ci = ci,
-      p_value = p_value,
-      conf_level = conf_level,
-      n_boot = n_boot,
-      seed = seed
-    )
-  }
-
-  out <- .mc_structure_corr_matrix(
-    res,
-    class_name = "wincor",
-    method = "winsorized_correlation",
-    description = paste0(
-      "Winsorized correlation; tr = ", tr,
-      "; NA mode = ", na_method, "."
-    ),
-    diagnostics = if (is.null(payload)) NULL else payload$diagnostics,
-    extra_attrs = c(
-      if (!is.null(payload$ci)) {
-        list(
-          ci = payload$ci,
-          conf.level = conf_level,
-          n_boot = n_boot
-        )
-      },
-      if (!is.null(payload$inference)) {
-        list(inference = payload$inference)
-      }
-    )
-  )
-  .mc_finalize_corr_output(
-    out,
-    output = output_cfg$output,
-    threshold = output_cfg$threshold,
-    diag = output_cfg$diag
+    },
+    payload_builder = function(x, est, ci, p_value, conf_level, n_boot, seed) {
+      .mc_wincor_pairwise_payload(
+        x,
+        est = est,
+        tr = tr,
+        ci = ci,
+        p_value = p_value,
+        conf_level = conf_level,
+        n_boot = n_boot,
+        seed = seed
+      )
+    },
+    min_n = 5L,
+    direct_method = "wincor",
+    symmetric = TRUE,
+    n_boot = n_boot,
+    seed = seed
   )
 }
 
@@ -422,14 +345,6 @@ wincor <- function(data,
     upr = upr,
     n_complete = n_complete
   )
-}
-
-.mc_wincor_ci_attr <- function(x) {
-  attr(x, "ci", exact = TRUE)
-}
-
-.mc_wincor_inference_attr <- function(x) {
-  attr(x, "inference", exact = TRUE)
 }
 
 .mc_wincor_pairwise_payload <- function(X,
@@ -541,60 +456,30 @@ wincor <- function(data,
   )
   check_inherits(object, "wincor")
 
-  est <- as.matrix(object)
-  rn <- rownames(est); cn <- colnames(est)
-  if (is.null(rn)) rn <- as.character(seq_len(nrow(est)))
-  if (is.null(cn)) cn <- as.character(seq_len(ncol(est)))
-
-  ci <- .mc_wincor_ci_attr(object)
-  inf <- .mc_wincor_inference_attr(object)
-  diag_attr <- attr(object, "diagnostics", exact = TRUE)
-  include_ci <- identical(show_ci, "yes") && !is.null(ci)
+  ci <- .mc_ci_attr(object)
+  inf <- .mc_inference_attr(object)
   include_p <- !is.null(inf) && !is.null(inf$p_value)
-
-  rows <- vector("list", nrow(est) * (ncol(est) - 1L) / 2L)
-  k <- 0L
-  for (i in seq_len(nrow(est) - 1L)) {
-    for (j in (i + 1L):ncol(est)) {
-      k <- k + 1L
-      rec <- list(
-        var1 = rn[i],
-        var2 = cn[j],
-        estimate = round(est[i, j], digits)
+  .mc_pairwise_matrix_summary(
+    object,
+    class_name = "summary.wincor",
+    digits = digits,
+    ci_digits = ci_digits,
+    p_digits = p_digits,
+    show_ci = show_ci,
+    ci_attr = ci,
+    inference_attr = inf,
+    include_p = include_p,
+    extra_columns = if (isTRUE(include_p)) {
+      list(
+        statistic = list(matrix = inf$statistic, digits = digits),
+        p_value = list(matrix = inf$p_value, digits = p_digits)
       )
-      if (is.list(diag_attr) && is.matrix(diag_attr$n_complete)) {
-        rec$n_complete <- as.integer(diag_attr$n_complete[i, j])
-      }
-      if (include_ci) {
-        rec$lwr <- if (is.finite(ci$lwr.ci[i, j])) round(ci$lwr.ci[i, j], ci_digits) else NA_real_
-        rec$upr <- if (is.finite(ci$upr.ci[i, j])) round(ci$upr.ci[i, j], ci_digits) else NA_real_
-      }
-      if (include_p) {
-        rec$statistic <- if (is.finite(inf$statistic[i, j])) round(inf$statistic[i, j], digits) else NA_real_
-        rec$p_value <- if (is.finite(inf$p_value[i, j])) round(inf$p_value[i, j], p_digits) else NA_real_
-      }
-      rows[[k]] <- rec
-    }
-  }
-
-  df <- do.call(rbind.data.frame, rows)
-  rownames(df) <- NULL
-  num_cols <- intersect(c("estimate", "lwr", "upr", "statistic", "p_value"), names(df))
-  int_cols <- intersect(c("n_complete"), names(df))
-  for (nm in num_cols) df[[nm]] <- as.numeric(df[[nm]])
-  for (nm in int_cols) df[[nm]] <- as.integer(df[[nm]])
-
-  out <- .mc_finalize_summary_df(df, class_name = "summary.wincor")
-  attr(out, "overview") <- .mc_summary_corr_matrix(object)
-  attr(out, "has_ci") <- include_ci
-  attr(out, "has_p") <- include_p
-  attr(out, "conf.level") <- if (is.null(ci)) NA_real_ else ci$conf.level
-  attr(out, "digits") <- digits
-  attr(out, "ci_digits") <- ci_digits
-  attr(out, "p_digits") <- p_digits
-  attr(out, "inference_method") <- if (is.null(inf)) NA_character_ else inf$method
-  attr(out, "n_boot") <- if (is.null(ci)) NA_integer_ else attr(object, "n_boot", exact = TRUE) %||% NA_integer_
-  out
+    },
+    extra_attrs = list(
+      inference_method = if (is.null(inf)) NA_character_ else inf$method,
+      n_boot = if (is.null(ci)) NA_integer_ else attr(object, "n_boot", exact = TRUE) %||% NA_integer_
+    )
+  )
 }
 
 #' @rdname wincor
@@ -653,7 +538,7 @@ summary.wincor <- function(object, n = NULL, topn = NULL,
                            p_digits = 4,
                            show_ci = NULL, ...) {
   check_inherits(object, "wincor")
-  if (is.null(.mc_wincor_ci_attr(object)) && is.null(.mc_wincor_inference_attr(object))) {
+  if (is.null(.mc_ci_attr(object)) && is.null(.mc_inference_attr(object))) {
     return(.mc_summary_corr_matrix(object, topn = topn))
   }
   .mc_wincor_pairwise_summary(
@@ -694,4 +579,5 @@ print.summary.wincor <- function(x, digits = NULL, n = NULL,
   )
   invisible(x)
 }
+
 

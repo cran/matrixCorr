@@ -349,18 +349,27 @@ describes similarity on the measurement scale itself. Reliability
 describes the proportion of variation attributable to stable differences
 among subjects rather than to measurement error or method
 disagreement.</p>
-<p>This vignette covers the wide-data functions:</p>
+<p>This vignette focuses on <code>ccc()</code> for wide data and uses
+related agreement and reliability functions as context:</p>
 <ul>
 <li><code>ccc()</code></li>
 <li><code>ba()</code></li>
 <li><code>icc()</code></li>
+<li><code>ccc_rm_reml()</code> and <code>ccc_rm_ustat()</code></li>
+<li><code>icc_rm_reml()</code></li>
+<li><code>cia()</code> and <code>cia_rm()</code></li>
 </ul>
 </div>
 <div id="pairwise-concordance-and-bland-altman-analysis" class="section level2">
 <h2>Pairwise concordance and Bland-Altman analysis</h2>
 <p>Lin’s concordance correlation coefficient combines precision and
-accuracy in a single number. Bland-Altman analysis separates that
-question into estimated bias and limits of agreement.</p>
+accuracy in a single number. In <code>matrixCorr</code>,
+<code>ccc()</code> computes Lin’s pairwise CCC for numeric wide data and
+optionally returns large-sample confidence intervals. No formal
+hypothesis test is implemented; inference is based on the estimate and
+its confidence interval.</p>
+<p>Bland-Altman analysis separates the agreement question into estimated
+bias and limits of agreement.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(matrixCorr)</span>
 <span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">40</span>)</span>
@@ -391,16 +400,68 @@ question into estimated bias and limits of agreement.</p>
 <span id="cb1-28"><a href="#cb1-28" tabindex="-1"></a><span class="co">#&gt;   most_negative: m1-m2 (0.9299)</span></span>
 <span id="cb1-29"><a href="#cb1-29" tabindex="-1"></a><span class="co">#&gt;   most_positive: m1-m2 (0.9299)</span></span>
 <span id="cb1-30"><a href="#cb1-30" tabindex="-1"></a><span class="co">#&gt;   ci          : 95%</span></span>
-<span id="cb1-31"><a href="#cb1-31" tabindex="-1"></a><span class="co">#&gt;   ci_method   : delta_method</span></span>
+<span id="cb1-31"><a href="#cb1-31" tabindex="-1"></a><span class="co">#&gt;   ci_method   : lin_delta_fisher_z</span></span>
 <span id="cb1-32"><a href="#cb1-32" tabindex="-1"></a><span class="co">#&gt;   ci_width    : 0.08</span></span>
 <span id="cb1-33"><a href="#cb1-33" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb1-34"><a href="#cb1-34" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
-<span id="cb1-35"><a href="#cb1-35" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb1-36"><a href="#cb1-36" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate lwr  upr  n_complete</span></span>
-<span id="cb1-37"><a href="#cb1-37" tabindex="-1"></a><span class="co">#&gt;  m1    m2    0.9299   0.88 0.96 50</span></span></code></pre></div>
+<span id="cb1-34"><a href="#cb1-34" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n  95% CI      </span></span>
+<span id="cb1-35"><a href="#cb1-35" tabindex="-1"></a><span class="co">#&gt;  m1    m2    0.9299   50 [0.88, 0.96]</span></span>
+<span id="cb1-36"><a href="#cb1-36" tabindex="-1"></a><span class="fu">estimate</span>(fit_ccc)</span>
+<span id="cb1-37"><a href="#cb1-37" tabindex="-1"></a><span class="co">#&gt;           m1        m2</span></span>
+<span id="cb1-38"><a href="#cb1-38" tabindex="-1"></a><span class="co">#&gt; m1 1.0000000 0.9299231</span></span>
+<span id="cb1-39"><a href="#cb1-39" tabindex="-1"></a><span class="co">#&gt; m2 0.9299231 1.0000000</span></span>
+<span id="cb1-40"><a href="#cb1-40" tabindex="-1"></a><span class="fu">confint</span>(fit_ccc)</span>
+<span id="cb1-41"><a href="#cb1-41" tabindex="-1"></a><span class="co">#&gt;   item1 item2       lwr       upr</span></span>
+<span id="cb1-42"><a href="#cb1-42" tabindex="-1"></a><span class="co">#&gt; 1    m1    m2 0.8804487 0.9593657</span></span>
+<span id="cb1-43"><a href="#cb1-43" tabindex="-1"></a><span class="fu">ci</span>(fit_ccc)</span>
+<span id="cb1-44"><a href="#cb1-44" tabindex="-1"></a><span class="co">#&gt; $lwr</span></span>
+<span id="cb1-45"><a href="#cb1-45" tabindex="-1"></a><span class="co">#&gt;           m1        m2</span></span>
+<span id="cb1-46"><a href="#cb1-46" tabindex="-1"></a><span class="co">#&gt; m1 1.0000000 0.8804487</span></span>
+<span id="cb1-47"><a href="#cb1-47" tabindex="-1"></a><span class="co">#&gt; m2 0.8804487 1.0000000</span></span>
+<span id="cb1-48"><a href="#cb1-48" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb1-49"><a href="#cb1-49" tabindex="-1"></a><span class="co">#&gt; $upr</span></span>
+<span id="cb1-50"><a href="#cb1-50" tabindex="-1"></a><span class="co">#&gt;           m1        m2</span></span>
+<span id="cb1-51"><a href="#cb1-51" tabindex="-1"></a><span class="co">#&gt; m1 1.0000000 0.9593657</span></span>
+<span id="cb1-52"><a href="#cb1-52" tabindex="-1"></a><span class="co">#&gt; m2 0.9593657 1.0000000</span></span>
+<span id="cb1-53"><a href="#cb1-53" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb1-54"><a href="#cb1-54" tabindex="-1"></a><span class="co">#&gt; $conf.level</span></span>
+<span id="cb1-55"><a href="#cb1-55" tabindex="-1"></a><span class="co">#&gt; [1] 0.95</span></span>
+<span id="cb1-56"><a href="#cb1-56" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb1-57"><a href="#cb1-57" tabindex="-1"></a><span class="co">#&gt; $ci.method</span></span>
+<span id="cb1-58"><a href="#cb1-58" tabindex="-1"></a><span class="co">#&gt; [1] &quot;lin_delta_fisher_z&quot;</span></span>
+<span id="cb1-59"><a href="#cb1-59" tabindex="-1"></a><span class="fu">tidy</span>(fit_ccc)</span>
+<span id="cb1-60"><a href="#cb1-60" tabindex="-1"></a><span class="co">#&gt;     item1 item2  estimate       lwr       upr</span></span>
+<span id="cb1-61"><a href="#cb1-61" tabindex="-1"></a><span class="co">#&gt; row    m1    m2 0.9299231 0.8804487 0.9593657</span></span></code></pre></div>
 <p>The two summaries are complementary rather than redundant.
 <code>ccc()</code> gives a single concordance coefficient, while
 <code>ba()</code> makes the scale of disagreement explicit.</p>
+<p>If you have at least 3 methods in wide form, <code>ba()</code> can
+now compute every unordered Bland-Altman contrast directly:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>fit_ba_pairwise <span class="ot">&lt;-</span> <span class="fu">ba</span>(<span class="fu">data.frame</span>(<span class="at">m1 =</span> m1, <span class="at">m2 =</span> m2, <span class="at">m3 =</span> ref <span class="sc">-</span> <span class="fl">0.8</span> <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="at">sd =</span> <span class="fl">2.5</span>)))</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="fu">print</span>(fit_ba_pairwise)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co">#&gt; Bland-Altman (row - column) (95% CI)</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt;  bias   sd_loa loa_low loa_up width  n_obs</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt;  -1.290 3.722  -8.584   6.005 14.589 50   </span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt;   1.502 3.461  -5.280   8.285 13.565 50   </span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt;   2.792 4.515  -6.058  11.642 17.700 50</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="fu">summary</span>(fit_ba_pairwise)</span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co">#&gt; Bland-Altman (pairwise row - column) (95% CI)</span></span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a><span class="co">#&gt; Agreement estimates</span></span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="co">#&gt;  n_obs bias   sd_loa loa_low loa_up width  loa_multiplier</span></span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt;  50    -1.290 3.722  -8.584   6.005 14.589 1.96          </span></span>
+<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt;  50     1.502 3.461  -5.280   8.285 13.565 1.96          </span></span>
+<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a><span class="co">#&gt;  50     2.792 4.515  -6.058  11.642 17.700 1.96          </span></span>
+<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a><span class="co">#&gt; Confidence intervals</span></span>
+<span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a><span class="co">#&gt;  bias_lwr bias_upr lo_lwr  lo_upr up_lwr up_upr</span></span>
+<span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a><span class="co">#&gt;  -2.347   -0.232   -10.416 -6.752 4.173   7.837</span></span>
+<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="co">#&gt;   0.519    2.486    -6.984 -3.577 6.582   9.988</span></span>
+<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt;   1.509    4.075    -8.281 -3.835 9.419  13.864</span></span></code></pre></div>
 </div>
 <div id="pairwise-icc" class="section level2">
 <h2>Pairwise ICC</h2>
@@ -408,78 +469,75 @@ question into estimated bias and limits of agreement.</p>
 directions. It can return a pairwise matrix across method pairs, or it
 can return the overall classical ICC table for the full set of
 methods.</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>wide_methods <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>  <span class="at">J1 =</span> ref <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="at">sd =</span> <span class="fl">1.5</span>),</span>
-<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>  <span class="at">J2 =</span> ref <span class="sc">+</span> <span class="fl">4.0</span> <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="at">sd =</span> <span class="fl">1.8</span>),</span>
-<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>  <span class="at">J3 =</span> ref <span class="sc">-</span> <span class="fl">3.0</span> <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="at">sd =</span> <span class="fl">2.0</span>),</span>
-<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>  <span class="at">J4 =</span> ref <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="at">sd =</span> <span class="fl">1.6</span>)</span>
-<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>)</span>
-<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a></span>
-<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>fit_icc_pair <span class="ot">&lt;-</span> <span class="fu">icc</span>(</span>
-<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>  wide_methods,</span>
-<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a>  <span class="at">model =</span> <span class="st">&quot;twoway_random&quot;</span>,</span>
-<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">&quot;agreement&quot;</span>,</span>
-<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a>  <span class="at">unit =</span> <span class="st">&quot;single&quot;</span>,</span>
-<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a>  <span class="at">scope =</span> <span class="st">&quot;pairwise&quot;</span></span>
-<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a>)</span>
-<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a></span>
-<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a>fit_icc_overall <span class="ot">&lt;-</span> <span class="fu">icc</span>(</span>
-<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a>  wide_methods,</span>
-<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a>  <span class="at">model =</span> <span class="st">&quot;twoway_random&quot;</span>,</span>
-<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">&quot;agreement&quot;</span>,</span>
-<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a>  <span class="at">unit =</span> <span class="st">&quot;single&quot;</span>,</span>
-<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a>  <span class="at">scope =</span> <span class="st">&quot;overall&quot;</span>,</span>
-<span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a>  <span class="at">ci =</span> <span class="cn">TRUE</span></span>
-<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a>)</span>
-<span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a></span>
-<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="fu">print</span>(fit_icc_pair, <span class="at">digits =</span> <span class="dv">2</span>)</span>
-<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt; Intraclass correlation matrix</span></span>
-<span id="cb2-27"><a href="#cb2-27" tabindex="-1"></a><span class="co">#&gt;   method      : Intraclass correlation (two-way random, agreement, single)</span></span>
-<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
-<span id="cb2-29"><a href="#cb2-29" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb2-30"><a href="#cb2-30" tabindex="-1"></a><span class="co">#&gt;      J1   J2   J3   J4</span></span>
-<span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a><span class="co">#&gt; J1 1.00 0.91 0.95 0.98</span></span>
-<span id="cb2-32"><a href="#cb2-32" tabindex="-1"></a><span class="co">#&gt; J2 0.91 1.00 0.82 0.92</span></span>
-<span id="cb2-33"><a href="#cb2-33" tabindex="-1"></a><span class="co">#&gt; J3 0.95 0.82 1.00 0.94</span></span>
-<span id="cb2-34"><a href="#cb2-34" tabindex="-1"></a><span class="co">#&gt; J4 0.98 0.92 0.94 1.00</span></span>
-<span id="cb2-35"><a href="#cb2-35" tabindex="-1"></a><span class="fu">summary</span>(fit_icc_pair)</span>
-<span id="cb2-36"><a href="#cb2-36" tabindex="-1"></a><span class="co">#&gt; Intraclass correlation summary</span></span>
-<span id="cb2-37"><a href="#cb2-37" tabindex="-1"></a><span class="co">#&gt;   method      : Intraclass correlation (two-way random, agreement, single)</span></span>
-<span id="cb2-38"><a href="#cb2-38" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
-<span id="cb2-39"><a href="#cb2-39" tabindex="-1"></a><span class="co">#&gt;   pairs       : 6</span></span>
-<span id="cb2-40"><a href="#cb2-40" tabindex="-1"></a><span class="co">#&gt;   n_complete  : 50</span></span>
-<span id="cb2-41"><a href="#cb2-41" tabindex="-1"></a><span class="co">#&gt;   estimate    : 0.8209 to 0.9813</span></span>
-<span id="cb2-42"><a href="#cb2-42" tabindex="-1"></a><span class="co">#&gt;   most_negative: J2-J3 (0.8209)</span></span>
-<span id="cb2-43"><a href="#cb2-43" tabindex="-1"></a><span class="co">#&gt;   most_positive: J1-J4 (0.9813)</span></span>
-<span id="cb2-44"><a href="#cb2-44" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb2-45"><a href="#cb2-45" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
-<span id="cb2-46"><a href="#cb2-46" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb2-47"><a href="#cb2-47" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n_complete</span></span>
-<span id="cb2-48"><a href="#cb2-48" tabindex="-1"></a><span class="co">#&gt;  J1    J4    0.9813   50        </span></span>
-<span id="cb2-49"><a href="#cb2-49" tabindex="-1"></a><span class="co">#&gt;  J1    J3    0.9487   50        </span></span>
-<span id="cb2-50"><a href="#cb2-50" tabindex="-1"></a><span class="co">#&gt;  J3    J4    0.9448   50        </span></span>
-<span id="cb2-51"><a href="#cb2-51" tabindex="-1"></a><span class="co">#&gt;  J2    J4    0.9168   50        </span></span>
-<span id="cb2-52"><a href="#cb2-52" tabindex="-1"></a><span class="co">#&gt;  J1    J2    0.9063   50        </span></span>
-<span id="cb2-53"><a href="#cb2-53" tabindex="-1"></a><span class="co">#&gt; ... 1 more rows not shown (omitted)</span></span>
-<span id="cb2-54"><a href="#cb2-54" tabindex="-1"></a><span class="co">#&gt; Use as.data.frame()/tidy()/as.matrix() to inspect the full result.</span></span>
-<span id="cb2-55"><a href="#cb2-55" tabindex="-1"></a><span class="fu">print</span>(fit_icc_overall)</span>
-<span id="cb2-56"><a href="#cb2-56" tabindex="-1"></a><span class="co">#&gt; Overall intraclass correlation</span></span>
-<span id="cb2-57"><a href="#cb2-57" tabindex="-1"></a><span class="co">#&gt;   method      : Overall intraclass correlation table</span></span>
-<span id="cb2-58"><a href="#cb2-58" tabindex="-1"></a><span class="co">#&gt;   subjects    : 50</span></span>
-<span id="cb2-59"><a href="#cb2-59" tabindex="-1"></a><span class="co">#&gt;   raters      : 4</span></span>
-<span id="cb2-60"><a href="#cb2-60" tabindex="-1"></a><span class="co">#&gt;   selected    : ICC2</span></span>
-<span id="cb2-61"><a href="#cb2-61" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb2-62"><a href="#cb2-62" tabindex="-1"></a><span class="co">#&gt; Coefficient table</span></span>
-<span id="cb2-63"><a href="#cb2-63" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb2-64"><a href="#cb2-64" tabindex="-1"></a><span class="co">#&gt;  coefficient label            estimate ... upr    selected</span></span>
-<span id="cb2-65"><a href="#cb2-65" tabindex="-1"></a><span class="co">#&gt;  ICC1        Single absolute  0.9160   ... 0.9471 FALSE   </span></span>
-<span id="cb2-66"><a href="#cb2-66" tabindex="-1"></a><span class="co">#&gt;  ICC2        Single random    0.9173   ... 0.9679  TRUE   </span></span>
-<span id="cb2-67"><a href="#cb2-67" tabindex="-1"></a><span class="co">#&gt;  ICC3        Single fixed     0.9751   ... 0.9846 FALSE   </span></span>
-<span id="cb2-68"><a href="#cb2-68" tabindex="-1"></a><span class="co">#&gt;  ICC1k       Average absolute 0.9776   ... 0.9862 FALSE   </span></span>
-<span id="cb2-69"><a href="#cb2-69" tabindex="-1"></a><span class="co">#&gt;  ICC2k       Average random   0.9779   ... 0.9918 FALSE   </span></span>
-<span id="cb2-70"><a href="#cb2-70" tabindex="-1"></a><span class="co">#&gt;  ICC3k       Average fixed    0.9936   ... 0.9961 FALSE   </span></span>
-<span id="cb2-71"><a href="#cb2-71" tabindex="-1"></a><span class="co">#&gt; ... 5 more variables not shown (omitted)</span></span>
-<span id="cb2-72"><a href="#cb2-72" tabindex="-1"></a><span class="co">#&gt; Use as.data.frame()/tidy()/as.matrix() to inspect the full result.</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>wide_methods <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="at">J1 =</span> ref <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="at">sd =</span> <span class="fl">1.5</span>),</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="at">J2 =</span> ref <span class="sc">+</span> <span class="fl">4.0</span> <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="at">sd =</span> <span class="fl">1.8</span>),</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="at">J3 =</span> ref <span class="sc">-</span> <span class="fl">3.0</span> <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="at">sd =</span> <span class="fl">2.0</span>),</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>  <span class="at">J4 =</span> ref <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="at">sd =</span> <span class="fl">1.6</span>)</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>)</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>fit_icc_pair <span class="ot">&lt;-</span> <span class="fu">icc</span>(</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>  wide_methods,</span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>  <span class="at">model =</span> <span class="st">&quot;twoway_random&quot;</span>,</span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">&quot;agreement&quot;</span>,</span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>  <span class="at">unit =</span> <span class="st">&quot;single&quot;</span>,</span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>  <span class="at">scope =</span> <span class="st">&quot;pairwise&quot;</span></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>)</span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a>fit_icc_overall <span class="ot">&lt;-</span> <span class="fu">icc</span>(</span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a>  wide_methods,</span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a>  <span class="at">model =</span> <span class="st">&quot;twoway_random&quot;</span>,</span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">&quot;agreement&quot;</span>,</span>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a>  <span class="at">unit =</span> <span class="st">&quot;single&quot;</span>,</span>
+<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>  <span class="at">scope =</span> <span class="st">&quot;overall&quot;</span>,</span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a>  <span class="at">ci =</span> <span class="cn">TRUE</span></span>
+<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a>)</span>
+<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a></span>
+<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a><span class="fu">print</span>(fit_icc_pair, <span class="at">digits =</span> <span class="dv">2</span>)</span>
+<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a><span class="co">#&gt; Intraclass correlation matrix</span></span>
+<span id="cb3-27"><a href="#cb3-27" tabindex="-1"></a><span class="co">#&gt;   method      : Intraclass correlation (two-way random, agreement, single)</span></span>
+<span id="cb3-28"><a href="#cb3-28" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
+<span id="cb3-29"><a href="#cb3-29" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-30"><a href="#cb3-30" tabindex="-1"></a><span class="co">#&gt;      J1   J2   J3   J4</span></span>
+<span id="cb3-31"><a href="#cb3-31" tabindex="-1"></a><span class="co">#&gt; J1 1.00 0.90 0.94 0.98</span></span>
+<span id="cb3-32"><a href="#cb3-32" tabindex="-1"></a><span class="co">#&gt; J2 0.90 1.00 0.80 0.91</span></span>
+<span id="cb3-33"><a href="#cb3-33" tabindex="-1"></a><span class="co">#&gt; J3 0.94 0.80 1.00 0.93</span></span>
+<span id="cb3-34"><a href="#cb3-34" tabindex="-1"></a><span class="co">#&gt; J4 0.98 0.91 0.93 1.00</span></span>
+<span id="cb3-35"><a href="#cb3-35" tabindex="-1"></a><span class="fu">summary</span>(fit_icc_pair)</span>
+<span id="cb3-36"><a href="#cb3-36" tabindex="-1"></a><span class="co">#&gt; Intraclass correlation summary</span></span>
+<span id="cb3-37"><a href="#cb3-37" tabindex="-1"></a><span class="co">#&gt;   method      : Intraclass correlation (two-way random, agreement, single)</span></span>
+<span id="cb3-38"><a href="#cb3-38" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
+<span id="cb3-39"><a href="#cb3-39" tabindex="-1"></a><span class="co">#&gt;   pairs       : 6</span></span>
+<span id="cb3-40"><a href="#cb3-40" tabindex="-1"></a><span class="co">#&gt;   n_complete  : 50</span></span>
+<span id="cb3-41"><a href="#cb3-41" tabindex="-1"></a><span class="co">#&gt;   estimate    : 0.7961 to 0.9817</span></span>
+<span id="cb3-42"><a href="#cb3-42" tabindex="-1"></a><span class="co">#&gt;   most_negative: J2-J3 (0.7961)</span></span>
+<span id="cb3-43"><a href="#cb3-43" tabindex="-1"></a><span class="co">#&gt;   most_positive: J1-J4 (0.9817)</span></span>
+<span id="cb3-44"><a href="#cb3-44" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-45"><a href="#cb3-45" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n </span></span>
+<span id="cb3-46"><a href="#cb3-46" tabindex="-1"></a><span class="co">#&gt;  J1    J4    0.9817   50</span></span>
+<span id="cb3-47"><a href="#cb3-47" tabindex="-1"></a><span class="co">#&gt;  J1    J3    0.9398   50</span></span>
+<span id="cb3-48"><a href="#cb3-48" tabindex="-1"></a><span class="co">#&gt;  J3    J4    0.9329   50</span></span>
+<span id="cb3-49"><a href="#cb3-49" tabindex="-1"></a><span class="co">#&gt;  J2    J4    0.9136   50</span></span>
+<span id="cb3-50"><a href="#cb3-50" tabindex="-1"></a><span class="co">#&gt;  J1    J2    0.9043   50</span></span>
+<span id="cb3-51"><a href="#cb3-51" tabindex="-1"></a><span class="co">#&gt;  J2    J3    0.7961   50</span></span>
+<span id="cb3-52"><a href="#cb3-52" tabindex="-1"></a><span class="fu">print</span>(fit_icc_overall)</span>
+<span id="cb3-53"><a href="#cb3-53" tabindex="-1"></a><span class="co">#&gt; Overall intraclass correlation</span></span>
+<span id="cb3-54"><a href="#cb3-54" tabindex="-1"></a><span class="co">#&gt;   method      : Overall intraclass correlation table</span></span>
+<span id="cb3-55"><a href="#cb3-55" tabindex="-1"></a><span class="co">#&gt;   subjects    : 50</span></span>
+<span id="cb3-56"><a href="#cb3-56" tabindex="-1"></a><span class="co">#&gt;   raters      : 4</span></span>
+<span id="cb3-57"><a href="#cb3-57" tabindex="-1"></a><span class="co">#&gt;   selected    : ICC2</span></span>
+<span id="cb3-58"><a href="#cb3-58" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-59"><a href="#cb3-59" tabindex="-1"></a><span class="co">#&gt; Coefficient table</span></span>
+<span id="cb3-60"><a href="#cb3-60" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-61"><a href="#cb3-61" tabindex="-1"></a><span class="co">#&gt;  coefficient label            estimate ... upr    selected</span></span>
+<span id="cb3-62"><a href="#cb3-62" tabindex="-1"></a><span class="co">#&gt;  ICC1        Single absolute  0.9050   ... 0.9400 FALSE   </span></span>
+<span id="cb3-63"><a href="#cb3-63" tabindex="-1"></a><span class="co">#&gt;  ICC2        Single random    0.9067   ... 0.9647  TRUE   </span></span>
+<span id="cb3-64"><a href="#cb3-64" tabindex="-1"></a><span class="co">#&gt;  ICC3        Single fixed     0.9757   ... 0.9850 FALSE   </span></span>
+<span id="cb3-65"><a href="#cb3-65" tabindex="-1"></a><span class="co">#&gt;  ICC1k       Average absolute 0.9744   ... 0.9843 FALSE   </span></span>
+<span id="cb3-66"><a href="#cb3-66" tabindex="-1"></a><span class="co">#&gt;  ICC2k       Average random   0.9749   ... 0.9909 FALSE   </span></span>
+<span id="cb3-67"><a href="#cb3-67" tabindex="-1"></a><span class="co">#&gt;  ICC3k       Average fixed    0.9938   ... 0.9962 FALSE   </span></span>
+<span id="cb3-68"><a href="#cb3-68" tabindex="-1"></a><span class="co">#&gt; ... 5 more variables not shown (omitted)</span></span>
+<span id="cb3-69"><a href="#cb3-69" tabindex="-1"></a><span class="co">#&gt; Use as.data.frame()/tidy()/as.matrix() to inspect the full result.</span></span></code></pre></div>
 </div>
 <div id="pairwise-versus-overall-icc" class="section level2">
 <h2>Pairwise versus overall ICC</h2>
@@ -496,38 +554,38 @@ be recovered by averaging the pairwise matrix.</p>
 <p>This simulation also includes systematic method bias, so it is a
 natural place to contrast <code>type = &quot;consistency&quot;</code> with
 <code>type = &quot;agreement&quot;</code>.</p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>fit_icc_cons <span class="ot">&lt;-</span> <span class="fu">icc</span>(</span>
-<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  wide_methods,</span>
-<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="at">model =</span> <span class="st">&quot;twoway_random&quot;</span>,</span>
-<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">&quot;consistency&quot;</span>,</span>
-<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>  <span class="at">unit =</span> <span class="st">&quot;single&quot;</span>,</span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>  <span class="at">scope =</span> <span class="st">&quot;overall&quot;</span>,</span>
-<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  <span class="at">ci =</span> <span class="cn">FALSE</span></span>
-<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>)</span>
-<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a></span>
-<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>fit_icc_agr <span class="ot">&lt;-</span> <span class="fu">icc</span>(</span>
-<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>  wide_methods,</span>
-<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>  <span class="at">model =</span> <span class="st">&quot;twoway_random&quot;</span>,</span>
-<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">&quot;agreement&quot;</span>,</span>
-<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>  <span class="at">unit =</span> <span class="st">&quot;single&quot;</span>,</span>
-<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a>  <span class="at">scope =</span> <span class="st">&quot;overall&quot;</span>,</span>
-<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a>  <span class="at">ci =</span> <span class="cn">FALSE</span></span>
-<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a>)</span>
-<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a></span>
-<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a><span class="fu">data.frame</span>(</span>
-<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a>  <span class="at">type =</span> <span class="fu">c</span>(<span class="st">&quot;consistency&quot;</span>, <span class="st">&quot;agreement&quot;</span>),</span>
-<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>  <span class="at">selected_coefficient =</span> <span class="fu">c</span>(</span>
-<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a>    <span class="fu">attr</span>(fit_icc_cons, <span class="st">&quot;selected_coefficient&quot;</span>),</span>
-<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a>    <span class="fu">attr</span>(fit_icc_agr, <span class="st">&quot;selected_coefficient&quot;</span>)</span>
-<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a>  ),</span>
-<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a>  <span class="at">estimate =</span> <span class="fu">c</span>(</span>
-<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a>    <span class="fu">attr</span>(fit_icc_cons, <span class="st">&quot;selected_row&quot;</span>)<span class="sc">$</span>estimate,</span>
-<span id="cb3-27"><a href="#cb3-27" tabindex="-1"></a>    <span class="fu">attr</span>(fit_icc_agr, <span class="st">&quot;selected_row&quot;</span>)<span class="sc">$</span>estimate</span>
-<span id="cb3-28"><a href="#cb3-28" tabindex="-1"></a>  )</span>
-<span id="cb3-29"><a href="#cb3-29" tabindex="-1"></a>)</span>
-<span id="cb3-30"><a href="#cb3-30" tabindex="-1"></a><span class="co">#&gt;          type selected_coefficient  estimate</span></span>
-<span id="cb3-31"><a href="#cb3-31" tabindex="-1"></a><span class="co">#&gt; 1 consistency                 ICC3 0.9750694</span></span>
-<span id="cb3-32"><a href="#cb3-32" tabindex="-1"></a><span class="co">#&gt; 2   agreement                 ICC2 0.9172615</span></span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>fit_icc_cons <span class="ot">&lt;-</span> <span class="fu">icc</span>(</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  wide_methods,</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="at">model =</span> <span class="st">&quot;twoway_random&quot;</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">&quot;consistency&quot;</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="at">unit =</span> <span class="st">&quot;single&quot;</span>,</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  <span class="at">scope =</span> <span class="st">&quot;overall&quot;</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>  <span class="at">ci =</span> <span class="cn">FALSE</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>)</span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>fit_icc_agr <span class="ot">&lt;-</span> <span class="fu">icc</span>(</span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a>  wide_methods,</span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a>  <span class="at">model =</span> <span class="st">&quot;twoway_random&quot;</span>,</span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">&quot;agreement&quot;</span>,</span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a>  <span class="at">unit =</span> <span class="st">&quot;single&quot;</span>,</span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a>  <span class="at">scope =</span> <span class="st">&quot;overall&quot;</span>,</span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>  <span class="at">ci =</span> <span class="cn">FALSE</span></span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a>)</span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a></span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="fu">data.frame</span>(</span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a>  <span class="at">type =</span> <span class="fu">c</span>(<span class="st">&quot;consistency&quot;</span>, <span class="st">&quot;agreement&quot;</span>),</span>
+<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a>  <span class="at">selected_coefficient =</span> <span class="fu">c</span>(</span>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a>    <span class="fu">attr</span>(fit_icc_cons, <span class="st">&quot;selected_coefficient&quot;</span>),</span>
+<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a>    <span class="fu">attr</span>(fit_icc_agr, <span class="st">&quot;selected_coefficient&quot;</span>)</span>
+<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a>  ),</span>
+<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a>  <span class="at">estimate =</span> <span class="fu">c</span>(</span>
+<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a>    <span class="fu">attr</span>(fit_icc_cons, <span class="st">&quot;selected_row&quot;</span>)<span class="sc">$</span>estimate,</span>
+<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a>    <span class="fu">attr</span>(fit_icc_agr, <span class="st">&quot;selected_row&quot;</span>)<span class="sc">$</span>estimate</span>
+<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a>  )</span>
+<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a>)</span>
+<span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt;          type selected_coefficient  estimate</span></span>
+<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt; 1 consistency                 ICC3 0.9757153</span></span>
+<span id="cb4-32"><a href="#cb4-32" tabindex="-1"></a><span class="co">#&gt; 2   agreement                 ICC2 0.9066943</span></span></code></pre></div>
 <p>Consistency discounts additive method shifts, whereas agreement
 penalises them. When methods differ mainly by a systematic offset,
 consistency can therefore look substantially better than agreement.</p>
@@ -546,19 +604,265 @@ reliability.</li>
 because each estimate is based on exactly two methods. For overall ICC,
 average-measure output uses the full number of analysed columns.</p>
 </div>
-<div id="choosing-among-ccc-ba-and-icc" class="section level2">
-<h2>Choosing among CCC, BA, and ICC</h2>
+<div id="agreement-indices-implemented-in-matrixcorr" class="section level2">
+<h2>Agreement indices implemented in matrixCorr</h2>
+<p>CCC, ICC and CIA address related but distinct agreement questions.
+CCC quantifies agreement between measurements by combining precision and
+accuracy (Lin, 1989). ICC expresses reliability or agreement through
+variance components; its interpretation depends on the study design,
+model form, and whether agreement or consistency is targeted (Shrout and
+Fleiss, 1979; McGraw and Wong, 1996). CIA targets individual agreement
+or interchangeability by comparing disagreement between methods with
+disagreement within methods (Barnhart, Kosinski, and Haber, 2007;
+Barnhart et al., 2007).</p>
+<p>These indices should not be treated as interchangeable without
+considering the scientific question, data structure, and implemented
+estimator.</p>
+<div id="ccc-functions" class="section level3">
+<h3>CCC functions</h3>
+<p><code>ccc()</code> is the simple wide-data CCC implementation. It
+estimates pairwise Lin CCC values and, when <code>ci = TRUE</code>,
+returns Lin delta-method/Fisher-z confidence intervals. It does not
+report a p-value or test decision.</p>
+<p>For repeated-measures data, the package provides two CCC routes.
+<code>ccc_rm_reml()</code> fits pairwise mixed models by REML and
+converts the fitted variance components and fixed-effect bias term into
+repeated-measures CCC estimates. <code>ccc_rm_ustat()</code> computes a
+nonparametric U-statistic repeated-measures CCC with optional Fisher-z
+confidence intervals. These repeated-measures functions estimate
+agreement parameters and optional confidence intervals; they do not
+implement a formal hypothesis test of the CCC parameter.
+<code>ccc_rm_reml()</code> can use boundary-aware likelihood-ratio tests
+for variance-component selection when <code>vc_select = &quot;auto&quot;</code>,
+but those tests are model-selection diagnostics rather than tests of CCC
+agreement.</p>
+</div>
+<div id="icc-functions" class="section level3">
+<h3>ICC functions</h3>
+<p><code>icc()</code> computes classical ANOVA ICC forms for wide data.
+With <code>scope = &quot;pairwise&quot;</code> it returns a pairwise matrix; with
+<code>scope = &quot;overall&quot;</code> it returns the standard six-form overall
+coefficient table. The selected ICC form is controlled by
+<code>model</code>, <code>type</code>, and <code>unit</code>, so the
+same numeric value should not be interpreted without those design
+choices.</p>
+<p>Pairwise <code>icc()</code> and repeated-measures
+<code>icc_rm_reml()</code> provide estimates and optional confidence
+intervals without a formal test of a target ICC parameter. For
+<code>icc(scope = &quot;overall&quot;)</code>, the package reports ANOVA F
+statistics, degrees of freedom, and p-values in the overall coefficient
+table. The implementation and tests verify those reported p-values, but
+the package documentation does not define a generic ICC agreement
+hypothesis for users; this vignette therefore does not describe the
+overall ICC p-values as a generic test of agreement.</p>
+</div>
+<div id="cia-functions" class="section level3">
+<h3>CIA functions</h3>
+<p><code>cia()</code> and <code>cia_rm()</code> are included here only
+as conceptual comparisons. CIA targets individual agreement or
+interchangeability rather than the same population concordance question
+targeted by CCC. In <code>cia()</code>, replicated readings within each
+subject-method cell are required because the estimator compares
+between-method disagreement with within-method replicate disagreement.
+The function supports pairwise and overall CIA, optional
+reference-method scaling, and optional confidence intervals by the
+selected inference method. No formal hypothesis test is implemented;
+inference is based on the estimate and its confidence interval.</p>
+<p><code>cia_rm()</code> is different from <code>cia()</code> because it
+targets matched repeated measurements under conditions such as visits,
+raters, laboratories, treatments, or time points, and it is not a
+technical-replicate estimator. It reports condition-specific CIA
+estimates, optional confidence intervals, and a homogeneity test for
+agreement across conditions. As implemented, the reported test statistic
+is <code>MS_method_time / MS_error</code>, with an upper-tail F-test
+p-value using <code>df_method_time</code> and <code>df_error</code>. The
+null hypothesis documented by the function is homogeneous agreement
+across conditions; the alternative is that agreement changes across
+conditions.</p>
+</div>
+<div id="function-summary" class="section level3">
+<h3>Function summary</h3>
+<p>In this package, the functions differ not only in the target index
+but also in the supported data structure and inferential procedure. Some
+functions provide estimates and confidence intervals only. A formal
+hypothesis test should only be interpreted when the function explicitly
+implements and reports one.</p>
+<table>
+<colgroup>
+<col width="3%" />
+<col width="4%" />
+<col width="18%" />
+<col width="18%" />
+<col width="16%" />
+<col width="22%" />
+<col width="16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Function</th>
+<th align="left">Index family</th>
+<th align="left">Target question</th>
+<th align="left">Data/design supported</th>
+<th align="left">Estimation approach</th>
+<th align="left">Inference reported</th>
+<th align="left">Formal hypothesis test implemented? Yes/No/Requires
+verification</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left"><code>ccc()</code></td>
+<td align="left">Lin CCC</td>
+<td align="left">Pairwise concordance combining precision and
+accuracy</td>
+<td align="left">Numeric wide data; rows are paired observational
+units</td>
+<td align="left">Moment CCC with Lin delta-method/Fisher-z CI when
+requested</td>
+<td align="left">Estimate; optional confidence interval</td>
+<td align="left">No</td>
+</tr>
+<tr class="even">
+<td align="left"><code>ccc_rm_reml()</code></td>
+<td align="left">Repeated-measures CCC</td>
+<td align="left">Pairwise repeated-measures concordance from fitted
+variance components</td>
+<td align="left">Long repeated-measures data; subject plus optional
+method/time structure</td>
+<td align="left">REML mixed-model variance components and fixed-effect
+bias term</td>
+<td align="left">Estimate; optional confidence interval;
+variance-component diagnostics</td>
+<td align="left">No for the CCC parameter; variance-component selection
+tests are not CCC tests</td>
+</tr>
+<tr class="odd">
+<td align="left"><code>ccc_rm_ustat()</code></td>
+<td align="left">Repeated-measures CCC</td>
+<td align="left">Pairwise repeated-measures concordance from U-statistic
+distances</td>
+<td align="left">Long repeated-measures data; balanced method/time
+coverage per pair</td>
+<td align="left">Nonparametric U-statistic estimator with Fisher-z CI
+when requested</td>
+<td align="left">Estimate; optional confidence interval</td>
+<td align="left">No</td>
+</tr>
+<tr class="even">
+<td align="left"><code>icc()</code></td>
+<td align="left">Classical ICC</td>
+<td align="left">Reliability or agreement under the selected ICC model,
+type, and unit</td>
+<td align="left">Numeric wide data; pairwise or overall all-column
+scope</td>
+<td align="left">Classical ANOVA mean-square formulas</td>
+<td align="left">Pairwise: estimate and optional CI. Overall:
+coefficient table with F statistic, df, p-value, and optional CI</td>
+<td align="left">Requires verification for overall p-values; no pairwise
+ICC test is documented</td>
+</tr>
+<tr class="odd">
+<td align="left"><code>icc_rm_reml()</code></td>
+<td align="left">Repeated-measures ICC</td>
+<td align="left">Pairwise repeated-measures reliability/agreement from
+fitted variance components</td>
+<td align="left">Long repeated-measures data; subject plus optional
+method/time structure</td>
+<td align="left">REML mixed-model variance components and fixed-effect
+bias term</td>
+<td align="left">Estimate; optional confidence interval;
+variance-component diagnostics</td>
+<td align="left">No for the ICC parameter; variance-component selection
+tests are not ICC tests</td>
+</tr>
+<tr class="even">
+<td align="left"><code>cia()</code></td>
+<td align="left">CIA</td>
+<td align="left">Individual agreement/interchangeability relative to
+within-method replicate disagreement</td>
+<td align="left">Long replicated method-comparison data with replicate
+identifiers</td>
+<td align="left">Method-of-moments disagreement ratios; optional bounded
+variance-component variant</td>
+<td align="left">Estimate; optional confidence interval</td>
+<td align="left">No</td>
+</tr>
+<tr class="odd">
+<td align="left"><code>cia_rm()</code></td>
+<td align="left">Repeated-measures CIA</td>
+<td align="left">Individual agreement/interchangeability across matched
+repeated conditions</td>
+<td align="left">Long matched repeated-measures data with one
+observation per subject-method-condition cell</td>
+<td align="left">Categorical-condition ANOVA estimator</td>
+<td align="left">Estimate; optional confidence interval; homogeneity F
+statistic and p-value</td>
+<td align="left">Yes: homogeneity of agreement across conditions</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div id="choosing-among-ccc-ba-icc-and-cia" class="section level2">
+<h2>Choosing among CCC, BA, ICC, and CIA</h2>
 <p>In practice these methods answer different questions.</p>
 <ul>
 <li>Use <code>ccc()</code> when one concordance coefficient per pair is
 the main target.</li>
+<li>Use <code>ccc_rm_ustat()</code> or <code>ccc_rm_reml()</code> when
+the concordance target is repeated-measures CCC rather than simple
+paired wide-data CCC.</li>
 <li>Use <code>ba()</code> when the size and direction of disagreement
-should be visible on the original measurement scale.</li>
+should be visible on the original measurement scale. Use
+<code>ba_rm()</code> for the repeated-measures Bland-Altman
+workflow.</li>
 <li>Use <code>icc()</code> when the target is reliability under a
 classical variance components interpretation.</li>
+<li>Use <code>icc_rm_reml()</code> when the target is repeated-measures
+ICC from the package’s REML variance-component backend.</li>
+<li>Use <code>cia()</code> when replicated readings within
+subject-method cells are available and the target is individual
+agreement or interchangeability relative to within-method replicate
+disagreement.</li>
+<li>Use <code>cia_rm()</code> when the target is individual agreement
+across matched repeated conditions rather than technical
+replicates.</li>
 </ul>
 <p>There is overlap in interpretation, but these are not interchangeable
 estimators.</p>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<p>Barnhart HX, Haber M, Lokhnygina Y, Kosinski AS. (2007). Comparison
+of concordance correlation coefficient and coefficient of individual
+agreement in assessing agreement. <em>Journal of Biopharmaceutical
+Statistics</em>, 17(4), 721-738.</p>
+<p>Barnhart HX, Kosinski AS, Haber M. (2007). Assessing individual
+agreement. <em>Journal of Biopharmaceutical Statistics</em>, 17(4),
+697-719.</p>
+<p>Carrasco JL, Jover L. (2003). Estimating the concordance correlation
+coefficient: a new approach. <em>Computational Statistics &amp; Data
+Analysis</em>, 47(4), 519-539.</p>
+<p>Carrasco JL, Phillips BR, Puig-Martinez J, King TS, Chinchilli VM.
+(2013). Estimation of the concordance correlation coefficient for
+repeated measures using SAS and R. <em>Computer Methods and Programs in
+Biomedicine</em>, 109(3), 293-304.</p>
+<p>Haber M, Gao J, Barnhart HX. (2010). Evaluation of agreement between
+measurement methods from data with matched repeated measurements via the
+coefficient of individual agreement. <em>Journal of Data Science</em>,
+8, 457-469.</p>
+<p>Lin L. (1989). A concordance correlation coefficient to evaluate
+reproducibility. <em>Biometrics</em>, 45, 255-268.</p>
+<p>McGraw KO, Wong SP. (1996). Forming inferences about some intraclass
+correlation coefficients. <em>Psychological Methods</em>, 1(1),
+30-46.</p>
+<p>Pan Y, Gao J, Haber M, Barnhart HX. (2010). Estimation of
+coefficients of individual agreement (CIA’s) for quantitative and binary
+data using SAS and R. <em>Computer Methods and Programs in
+Biomedicine</em>.</p>
+<p>Shrout PE, Fleiss JL. (1979). Intraclass correlations: uses in
+assessing rater reliability. <em>Psychological Bulletin</em>, 86(2),
+420-428.</p>
 </div>
 
 

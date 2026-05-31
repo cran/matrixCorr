@@ -24,9 +24,13 @@
 #'       degenerate after weighting.
 #'     \item \code{"all"}: force ordinary Pearson for all columns.
 #'   }
-#' @param na_method One of \code{"error"} (default, fastest) or \code{"pairwise"}.
-#'   With \code{"pairwise"}, each \eqn{(j,k)} correlation is computed on the
-#'   intersection of non-missing rows for the pair.
+#' @param na_method Character scalar controlling missing-data handling.
+#'   \code{"error"} rejects missing, \code{NaN}, and infinite values.
+#'   \code{"pairwise"} recomputes each estimate on its own pairwise
+#'   complete-case overlap. This is permissive, but different matrix entries
+#'   may be based on different rows. \code{"complete"} performs listwise
+#'   deletion once across the retained numeric columns and then computes the
+#'   estimator on the common complete sample.
 #' @param mad_consistent Logical; if \code{TRUE}, use the normal-consistent MAD
 #'   (\code{MAD_raw * 1.4826}) in the bicor weights. Default \code{FALSE} to
 #'   match Langfelder & Horvath (2012).
@@ -200,6 +204,10 @@
 #' summary(R)
 #' R_ci <- bicor(X[, 1:5], ci = TRUE)
 #' summary(R_ci)
+#' estimate(R_ci)
+#' tidy(R_ci)
+#' ci(R_ci)
+#' confint(R_ci)
 #'
 #' # Interactive viewing (requires shiny)
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
@@ -210,7 +218,7 @@
 #' @export
 bicor <- function(
     data,
-    na_method        = c("error", "pairwise"),
+    na_method        = c("error", "pairwise", "complete"),
     ci               = FALSE,
     conf_level       = 0.95,
     n_threads        = getOption("matrixCorr.threads", 1L),
@@ -265,14 +273,18 @@ bicor <- function(
       is.null(sparse_threshold)) {
     numeric_data <- validate_corr_input(data)
     colnames_data <- colnames(numeric_data)
-    prev_threads <- get_omp_threads()
-    on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
+    prev_threads <- .mc_prepare_omp_threads(
+      n_threads
+    )
+    if (!is.null(prev_threads)) {
+      on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+    }
     res <- bicor_matrix_cpp(
       numeric_data,
       c_const = 9,
       maxPOutliers = 1,
       pearson_fallback = 1L,
-      n_threads = getOption("matrixCorr.threads", 1L)
+      n_threads = n_threads
     )
     if (!is.null(colnames_data)) {
       dimnames(res) <- .mc_square_dimnames(colnames_data)
@@ -284,7 +296,8 @@ bicor <- function(
       description = paste0(
         "Median/MAD-based biweight mid-correlation (bicor); max_p_outliers = 1",
         ", MAD = raw; fallback = hybrid; NA mode = error."
-      )
+      ),
+      symmetric = TRUE
     ))
   }
 
@@ -317,8 +330,17 @@ bicor <- function(
   } else {
     validate_corr_input(data, check_na = FALSE)
   }
-  colnames_data <- colnames(numeric_data)
   w <- check_weights(w, n = nrow(numeric_data), arg = "w")
+  diagnostics_extra <- NULL
+  if (identical(na_method, "complete")) {
+    cc <- .mc_complete_case_matrix(numeric_data, min_n = 5L, arg = "data")
+    numeric_data <- cc$data
+    if (!is.null(w)) {
+      w <- w[cc$diagnostics$complete_rows]
+    }
+    diagnostics_extra <- cc$diagnostics
+  }
+  colnames_data <- colnames(numeric_data)
   if (isTRUE(ci) && !is.null(w)) {
     abort_bad_arg(
       "ci",
@@ -345,8 +367,12 @@ bicor <- function(
     has_ci = ci,
     weighted = !is.null(w)
   )) {
-    prev_threads <- get_omp_threads()
-    on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
+    prev_threads <- .mc_prepare_omp_threads(
+      n_threads
+    )
+    if (!is.null(prev_threads)) {
+      on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+    }
     trip <- bicor_threshold_triplets_cpp(
       numeric_data,
       c_const = c_eff,
@@ -371,9 +397,13 @@ bicor <- function(
   }
 
   # --- choose backend
-  prev_threads <- get_omp_threads()
-  on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
-  if (is.null(w) && na_method == "error") {
+  prev_threads <- .mc_prepare_omp_threads(
+    n_threads
+  )
+  if (!is.null(prev_threads)) {
+    on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+  }
+  if (is.null(w) && !identical(na_method, "pairwise")) {
     res <- bicor_matrix_cpp(
       numeric_data,
       c_const          = c_eff,
@@ -381,7 +411,7 @@ bicor <- function(
       pearson_fallback = pf_int,
       n_threads        = n_threads
     )
-  } else if (is.null(w) && na_method == "pairwise") {
+  } else if (is.null(w) && identical(na_method, "pairwise")) {
     res <- bicor_matrix_pairwise_cpp(
       numeric_data,
       c_const          = c_eff,
@@ -390,7 +420,7 @@ bicor <- function(
       min_n            = 5L,
       n_threads        = n_threads
     )
-  } else if (!is.null(w) && na_method == "error") {
+  } else if (!is.null(w) && !identical(na_method, "pairwise")) {
     res <- bicor_matrix_weighted_cpp(
       numeric_data, w,
       c_const          = c_eff,
@@ -427,12 +457,14 @@ bicor <- function(
       conf_level = conf_level
     )
   }
+  diagnostics <- .mc_merge_diagnostics(diagnostics, diagnostics_extra)
 
   out <- .mc_structure_corr_matrix(
     res,
     class_name = "bicor",
     method = "biweight_mid_correlation",
     description = desc,
+    symmetric = TRUE,
     diagnostics = diagnostics,
     extra_attrs = c(
       if (!is.null(ci_attr)) {
@@ -446,7 +478,7 @@ bicor <- function(
       }
     )
   )
-  .mc_finalize_corr_output(
+  .mc_finalize_corr_output_fast(
     out,
     output = output_cfg$output,
     threshold = output_cfg$threshold,
@@ -545,14 +577,6 @@ bicor <- function(
   )
 }
 
-.mc_bicor_ci_attr <- function(x) {
-  attr(x, "ci", exact = TRUE)
-}
-
-.mc_bicor_inference_attr <- function(x) {
-  attr(x, "inference", exact = TRUE)
-}
-
 .mc_bicor_pairwise_summary <- function(object,
                                        digits = 4,
                                        ci_digits = 3,
@@ -565,60 +589,30 @@ bicor <- function(
   )
   check_inherits(object, "bicor")
 
-  est <- as.matrix(object)
-  rn <- rownames(est); cn <- colnames(est)
-  if (is.null(rn)) rn <- as.character(seq_len(nrow(est)))
-  if (is.null(cn)) cn <- as.character(seq_len(ncol(est)))
-
-  ci <- .mc_bicor_ci_attr(object)
-  inf <- .mc_bicor_inference_attr(object)
-  diag_attr <- attr(object, "diagnostics", exact = TRUE)
-  include_ci <- identical(show_ci, "yes") && !is.null(ci)
+  ci <- .mc_ci_attr(object)
+  inf <- .mc_inference_attr(object)
   include_p <- !is.null(inf) && !is.null(inf$p_value)
-
-  rows <- vector("list", nrow(est) * (ncol(est) - 1L) / 2L)
-  k <- 0L
-  for (i in seq_len(nrow(est) - 1L)) {
-    for (j in (i + 1L):ncol(est)) {
-      k <- k + 1L
-      rec <- list(
-        var1 = rn[i],
-        var2 = cn[j],
-        estimate = round(est[i, j], digits)
+  .mc_pairwise_matrix_summary(
+    object,
+    class_name = "summary.bicor",
+    digits = digits,
+    ci_digits = ci_digits,
+    p_digits = p_digits,
+    show_ci = show_ci,
+    ci_attr = ci,
+    inference_attr = inf,
+    include_p = include_p,
+    extra_columns = if (isTRUE(include_p)) {
+      list(
+        statistic = list(matrix = inf$statistic, digits = digits),
+        fisher_z = list(matrix = inf$Z, digits = digits),
+        p_value = list(matrix = inf$p_value, digits = p_digits)
       )
-      if (is.list(diag_attr) && is.matrix(diag_attr$n_complete)) {
-        rec$n_complete <- as.integer(diag_attr$n_complete[i, j])
-      }
-      if (include_ci) {
-        rec$lwr <- if (is.finite(ci$lwr.ci[i, j])) round(ci$lwr.ci[i, j], ci_digits) else NA_real_
-        rec$upr <- if (is.finite(ci$upr.ci[i, j])) round(ci$upr.ci[i, j], ci_digits) else NA_real_
-      }
-      if (include_p) {
-        rec$statistic <- if (is.finite(inf$statistic[i, j])) round(inf$statistic[i, j], digits) else NA_real_
-        rec$fisher_z <- if (is.finite(inf$Z[i, j])) round(inf$Z[i, j], digits) else NA_real_
-        rec$p_value <- if (is.finite(inf$p_value[i, j])) round(inf$p_value[i, j], p_digits) else NA_real_
-      }
-      rows[[k]] <- rec
-    }
-  }
-
-  df <- do.call(rbind.data.frame, rows)
-  rownames(df) <- NULL
-  num_cols <- intersect(c("estimate", "lwr", "upr", "statistic", "fisher_z", "p_value"), names(df))
-  int_cols <- intersect(c("n_complete"), names(df))
-  for (nm in num_cols) df[[nm]] <- as.numeric(df[[nm]])
-  for (nm in int_cols) df[[nm]] <- as.integer(df[[nm]])
-
-  out <- .mc_finalize_summary_df(df, class_name = "summary.bicor")
-  attr(out, "overview") <- .mc_summary_corr_matrix(object)
-  attr(out, "has_ci") <- include_ci
-  attr(out, "has_p") <- include_p
-  attr(out, "conf.level") <- if (is.null(ci)) NA_real_ else ci$conf.level
-  attr(out, "digits") <- digits
-  attr(out, "ci_digits") <- ci_digits
-  attr(out, "p_digits") <- p_digits
-  attr(out, "inference_method") <- if (is.null(inf)) NA_character_ else inf$method
-  out
+    },
+    extra_attrs = list(
+      inference_method = if (is.null(inf)) NA_character_ else inf$method
+    )
+  )
 }
 
 #' @rdname bicor
@@ -752,7 +746,7 @@ plot.bicor <- function(
   df <- tm
   df$Var1 <- factor(as.character(df$Var1), levels = rev(rn))
   df$Var2 <- factor(as.character(df$Var2), levels = cn)
-  ci <- .mc_bicor_ci_attr(x)
+  ci <- .mc_ci_attr(x)
   if (!is.null(ci) && is.matrix(ci$lwr.ci) && is.matrix(ci$upr.ci)) {
     lwr_mat <- ci$lwr.ci
     upr_mat <- ci$upr.ci
@@ -842,7 +836,7 @@ summary.bicor <- function(object, n = NULL, topn = NULL,
                           p_digits = 4,
                           show_ci = NULL, ...) {
   check_inherits(object, "bicor")
-  if (is.null(.mc_bicor_ci_attr(object))) {
+  if (is.null(.mc_ci_attr(object))) {
     return(.mc_summary_corr_matrix(object, topn = topn))
   }
   .mc_bicor_pairwise_summary(
@@ -876,5 +870,6 @@ print.summary.bicor <- function(x, digits = NULL, n = NULL,
   )
   invisible(x)
 }
+
 
 

@@ -469,7 +469,7 @@ view_corr_shiny <- function(x, title = NULL, default_max_vars = 40L) {
   }
   output <- attr(x, "output", exact = TRUE)
   is.character(output) && length(output) == 1L &&
-    output %in% c("matrix", "sparse", "edge_list", "packed_upper")
+    output %in% c("matrix", "sparse", "edge_list")
 }
 
 .mc_parse_corr_object <- function(obj, label) {
@@ -498,14 +498,14 @@ view_corr_shiny <- function(x, title = NULL, default_max_vars = 40L) {
       attr(obj, "method", exact = TRUE) %||%
       label
   } else {
-    stop("Unsupported object class", call. = FALSE)
+    cli::cli_abort("Unsupported object class.")
   }
   mat <- as.matrix(mat)
   if (is.null(colnames(mat))) {
     colnames(mat) <- rownames(mat) <- paste0("V", seq_len(ncol(mat)))
   }
   if (nrow(mat) != ncol(mat)) {
-    stop("Correlation matrices must be square.", call. = FALSE)
+    cli::cli_abort("Correlation matrices must be square.")
   }
   if (is.null(desc)) {
     desc <- attr(obj, "description", exact = TRUE) %||%

@@ -61,6 +61,16 @@ print(fit_pearson, digits = 2)
 summary(fit_spearman)
 ```
 
+For fitted objects with confidence intervals, the public accessors expose the
+stored pieces without asking users to read attributes directly.
+
+```{r}
+estimate(fit_pearson)
+confint(fit_pearson)
+ci(fit_pearson)
+tidy(fit_pearson)
+```
+
 This pattern extends to other wide-data estimators such as `kendall_tau()`,
 `dcor()`, `bicor()`, `pbcor()`, `wincor()`, `skipped_corr()`,
 `shrinkage_corr()`, `pcorr()`, `ccc()`, and `icc()`.
@@ -100,6 +110,10 @@ Overall ICC asks how reliable the full set of columns is when analysed jointly.
 fit_icc_overall <- icc(wide_methods, scope = "overall", ci = TRUE)
 print(fit_icc_overall)
 summary(fit_icc_overall)
+estimate(fit_icc_overall)
+confint(fit_icc_overall)
+ci(fit_icc_overall)
+tidy(fit_icc_overall)
 ```
 
 ## Repeated-measures workflow
@@ -173,6 +187,7 @@ Display defaults can be controlled through ordinary R options. For example:
 
 ```{r, eval = FALSE}
 options(
+  matrixCorr.threads = parallel::detectCores(logical = FALSE),
   matrixCorr.print_max_rows = 20L,
   matrixCorr.print_topn = 5L,
   matrixCorr.print_max_vars = 10L,
@@ -184,10 +199,12 @@ options(
 )
 ```
 
-The print options control compact console previews returned by `print()`. The
-summary options control the longer digest returned by `summary()`. Current
-values can be inspected with `getOption("matrixCorr.print_max_rows")` and the
-same pattern for the remaining options.
+`matrixCorr.threads` defines the default for `n_threads` across thread-aware
+estimators. The print options control compact console previews returned by
+`print()`. The summary options control the longer digest returned by
+`summary()`. Current values can be inspected with
+`getOption("matrixCorr.print_max_rows")` and the same pattern for the remaining
+options.
 
 This shared display layer is part of the package design. The goal is that
 users can move across workflow families without relearning how objects are

@@ -20,6 +20,12 @@ print(fit_pearson, digits = 2)
 summary(fit_spearman)
 
 ## -----------------------------------------------------------------------------
+estimate(fit_pearson)
+confint(fit_pearson)
+ci(fit_pearson)
+tidy(fit_pearson)
+
+## -----------------------------------------------------------------------------
 set.seed(2)
 ref <- rnorm(40, mean = 10, sd = 2)
 alt <- ref + 0.3 + rnorm(40, sd = 0.8)
@@ -43,6 +49,10 @@ summary(fit_icc)
 fit_icc_overall <- icc(wide_methods, scope = "overall", ci = TRUE)
 print(fit_icc_overall)
 summary(fit_icc_overall)
+estimate(fit_icc_overall)
+confint(fit_icc_overall)
+ci(fit_icc_overall)
+tidy(fit_icc_overall)
 
 ## -----------------------------------------------------------------------------
 set.seed(3)
@@ -96,6 +106,7 @@ summary(fit_icc_rm)
 
 ## ----eval = FALSE-------------------------------------------------------------
 # options(
+#   matrixCorr.threads = parallel::detectCores(logical = FALSE),
 #   matrixCorr.print_max_rows = 20L,
 #   matrixCorr.print_topn = 5L,
 #   matrixCorr.print_max_vars = 10L,

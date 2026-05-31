@@ -530,12 +530,15 @@ NULL
                                            topn = 5L,
                                            max_vars = NULL,
                                            width = getOption("width", 80L),
+                                           digits = 4,
+                                           ci_digits = digits,
                                            show_ci = "yes",
                                            ...) {
   top <- .mc_pairwise_top_results(df, topn = topn, show_ci = show_ci)
   if (!nrow(top)) {
     return(invisible(top))
   }
+  top <- .mc_format_summary_numeric_table(top, digits = digits, ci_digits = ci_digits)
   cat("\n", header, "\n\n", sep = "")
   .mc_print_preview_table(
     top,
@@ -557,6 +560,39 @@ NULL
   )
   if (length(foot)) cat(paste0(foot, collapse = "\n"), "\n", sep = "")
   invisible(top)
+}
+
+.mc_format_summary_numeric_table <- function(df,
+                                             digits = 4,
+                                             ci_digits = digits) {
+  if (!is.data.frame(df) || !nrow(df)) {
+    return(df)
+  }
+  ci_digits <- .mc_coalesce(ci_digits, digits)
+
+  format_cols <- function(x, cols, ndigits) {
+    for (nm in intersect(cols, names(x))) {
+      vals <- suppressWarnings(as.numeric(x[[nm]]))
+      has_negative <- any(is.finite(vals) & vals < 0)
+      fmt <- if (isTRUE(has_negative)) {
+        sprintf(paste0("% .", ndigits, "f"), vals)
+      } else {
+        formatC(vals, format = "f", digits = ndigits)
+      }
+      fmt[is.na(vals)] <- NA_character_
+      x[[nm]] <- fmt
+    }
+    x
+  }
+
+  df <- format_cols(df, c("estimate"), digits)
+  df <- format_cols(df, c("lwr", "upr"), ci_digits)
+  df <- format_cols(
+    df,
+    c("statistic", "df", "p_value", "fisher_z", "se", "p_value_adjusted", "skipped_prop"),
+    digits
+  )
+  df
 }
 
 .mc_corr_summary_digest_items <- function(x, digits = 4, show_ci = "yes") {
@@ -677,19 +713,38 @@ NULL
   digest <- digest[!is.na(digest) & nzchar(digest) & !(names(digest) == "multiplicity" & digest == "none")]
 
   .mc_print_named_digest(digest, header = title)
-  .mc_print_ranked_pairs_preview(
-    .mc_reorder_summary_columns(
-      .mc_standardize_summary_counts(
-        .mc_standardize_summary_pairs(as.data.frame(x, stringsAsFactors = FALSE)),
-        repeated = any(c("n_subjects", "n_obs") %in% names(x))
-      ),
+  cat("\n")
+  table_x <- .mc_reorder_summary_columns(
+    .mc_standardize_summary_counts(
+      .mc_standardize_summary_pairs(as.data.frame(x, stringsAsFactors = FALSE)),
       repeated = any(c("n_subjects", "n_obs") %in% names(x))
     ),
-    header = "Strongest pairs by |estimate|",
+    repeated = any(c("n_subjects", "n_obs") %in% names(x))
+  )
+  if (nrow(table_x) && "estimate" %in% names(table_x)) {
+    table_x <- table_x[order(abs(table_x$estimate), decreasing = TRUE, na.last = TRUE), , drop = FALSE]
+  }
+  table_x <- .mc_compact_corr_summary_table(
+    table_x,
+    show_ci = cfg$show_ci,
+    conf_level = suppressWarnings(as.numeric(attr(x, "conf.level"))),
+    digits = digits,
+    ci_digits = .mc_coalesce(attr(x, "ci_digits", exact = TRUE), digits)
+  )
+  table_x <- .mc_format_summary_numeric_table(
+    table_x,
+    digits = digits,
+    ci_digits = .mc_coalesce(attr(x, "ci_digits", exact = TRUE), digits)
+  )
+  .mc_print_preview_table(
+    table_x,
+    n = cfg$n,
     topn = cfg$topn,
     max_vars = cfg$max_vars,
     width = cfg$width,
-    show_ci = cfg$show_ci,
+    context = "summary",
+    full_hint = TRUE,
+    summary_hint = FALSE,
     ...
   )
   invisible(x)

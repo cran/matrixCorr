@@ -11,7 +11,10 @@
 #' @param na_method Character scalar controlling missing-data handling.
 #'   \code{"error"} rejects missing, \code{NaN}, and infinite values.
 #'   \code{"pairwise"} recomputes each association on its own pairwise
-#'   complete-case overlap.
+#'   complete-case overlap. This is permissive, but different matrix entries
+#'   may be based on different rows. \code{"complete"} performs listwise
+#'   deletion once across the retained numeric columns and then computes the
+#'   estimator on the common complete sample.
 #' @param p_value Logical (default \code{FALSE}). If \code{TRUE}, attach
 #' pairwise p-values, test statistics, and degrees of freedom from the
 #' distance-correlation t-test of independence.
@@ -90,7 +93,10 @@
 #' freedom. The reported p-value uses the upper-tail probability
 #' \eqn{P(t_{M-1} \ge T)}. This inference payload is attached as metadata; the
 #' main returned matrix is unchanged unless \code{p_value} is explicitly
-#' requested.
+#' requested. The t reference is an asymptotic approximation. For small
+#' complete-case sample sizes, especially when \eqn{M - 1} is small, p-values
+#' can be unstable and should be interpreted cautiously; a permutation-based
+#' dependence test is preferable when exact small-sample calibration matters.
 #'
 #' @note Requires \eqn{n \ge 4}. Columns with (near) zero unbiased distance
 #' variance yield \code{NA} in their row/column. Typical per-pair cost uses
@@ -109,6 +115,7 @@
 #' (energy statistics). R package version 1.7-12.
 #'
 #' @examples
+#' \donttest{
 #' ## Independent variables -> dCor ~ 0
 #' set.seed(1)
 #' X <- cbind(a = rnorm(200), b = rnorm(200))
@@ -140,188 +147,135 @@
 #' ## Optional inference
 #' D4 <- dcor(XY, p_value = TRUE)
 #' summary(D4)
+#' estimate(D4)
+#' tidy(D4)
 #'
 #' # Interactive viewing (requires shiny)
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
 #'   view_corr_shiny(D)
+#' }
 #' }
 #'
 #' @author Thiago de paula Oliveira
 #'
 #' @export
 dcor <- function(data,
-                 na_method = c("error", "pairwise"),
+                 na_method = c("error", "pairwise", "complete"),
                  p_value = FALSE,
                  n_threads = getOption("matrixCorr.threads", 1L),
                  output = c("matrix", "sparse", "edge_list"),
                  threshold = 0,
                  diag = TRUE,
                  ...) {
-  output_cfg <- .mc_validate_output_args(
+  output_cfg <- .mc_prepare_corr_output(
     output = output,
     threshold = threshold,
     diag = diag
   )
   if (...length() == 0L && missing(na_method) && isFALSE(p_value)) {
-    numeric_data <- validate_corr_input(data, check_na = TRUE)
-    colnames_data <- colnames(numeric_data)
-    prev_threads <- .mc_prepare_omp_threads(
+    input <- .mc_prepare_corr_input(
+      data,
+      na_cfg = list(na_method = "error", check_na = TRUE),
+      min_n = 4L
+    )
+    return(.mc_with_omp_threads(
       n_threads,
-      n_threads_missing = missing(n_threads)
-    )
-    if (!is.null(prev_threads)) {
-      on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
-    }
-    dcor_matrix <- ustat_dcor_matrix_cpp(numeric_data)
-    if (!is.null(colnames_data)) {
-      dimnames(dcor_matrix) <- .mc_square_dimnames(colnames_data)
-    }
-    out <- .mc_structure_corr_matrix(
-      dcor_matrix,
-      class_name = "dcor",
-      method = "distance_correlation",
-      description = "Pairwise distance correlation matrix (unbiased)"
-    )
-    return(.mc_finalize_corr_output(
-      out,
-      output = output_cfg$output,
-      threshold = output_cfg$threshold,
-      diag = output_cfg$diag
+      {
+        .mc_finalize_corr_result(
+          mat = ustat_dcor_matrix_cpp(input$data),
+          class_name = "dcor",
+          method = "distance_correlation",
+          description = "Pairwise distance correlation matrix (unbiased)",
+          output_cfg = output_cfg,
+          dimnames = input$dimnames,
+          symmetric = TRUE
+        )
+      }
     ))
   }
 
-  if (...length() == 0L && missing(na_method)) {
-    na_cfg <- list(na_method = "error", check_na = TRUE)
-  } else {
-    legacy_args <- .mc_extract_legacy_aliases(list(...), allowed = "check_na")
-    na_cfg <- resolve_na_args(
-      na_method = na_method,
-      check_na = legacy_args$check_na %||% NULL,
-      na_method_missing = missing(na_method)
-    )
-  }
+  na_cfg <- .mc_resolve_corr_na(
+    na_method = na_method,
+    dots = list(...),
+    na_method_missing = missing(na_method),
+    allowed = c("error", "pairwise", "complete")
+  )
   if (!isFALSE(p_value)) {
     check_bool(p_value, arg = "p_value")
   } else if (!is.logical(p_value) || length(p_value) != 1L || is.na(p_value)) {
     check_bool(p_value, arg = "p_value")
   }
-  numeric_data <- validate_corr_input(data, check_na = na_cfg$check_na)
-  colnames_data <- colnames(numeric_data)
-  dn <- .mc_square_dimnames(colnames_data)
+  input <- .mc_prepare_corr_input(data, na_cfg = na_cfg, min_n = 4L)
   diagnostics <- NULL
   inference_attr <- NULL
 
-  prev_threads <- .mc_prepare_omp_threads(
+  .mc_with_omp_threads(
     n_threads,
-    n_threads_missing = missing(n_threads)
-  )
-  if (!is.null(prev_threads)) {
-    on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
-  }
+    {
+      if (isTRUE(p_value) || identical(na_cfg$na_method, "pairwise")) {
+        pairwise <- ustat_dcor_matrix_pairwise_cpp(
+          input$data,
+          return_inference = p_value
+        )
+        dcor_matrix <- pairwise$est
+        diagnostics <- list(
+          n_complete = .mc_set_matrix_dimnames(unclass(pairwise$n_complete), input$colnames)
+        )
 
-  if (isTRUE(p_value) || !isTRUE(na_cfg$check_na)) {
-    pairwise <- ustat_dcor_matrix_pairwise_cpp(
-      numeric_data,
-      return_inference = p_value
-    )
-    dcor_matrix <- pairwise$est
-    diagnostics <- list(
-      n_complete = .mc_set_matrix_dimnames(unclass(pairwise$n_complete), colnames_data)
-    )
+        if (isTRUE(p_value)) {
+          inference_attr <- list(
+            method = "dcor_t_test",
+            estimate = .mc_set_matrix_dimnames(unclass(pairwise$estimate), input$colnames),
+            statistic = .mc_set_matrix_dimnames(unclass(pairwise$statistic), input$colnames),
+            parameter = .mc_set_matrix_dimnames(unclass(pairwise$parameter), input$colnames),
+            p_value = .mc_set_matrix_dimnames(unclass(pairwise$p_value), input$colnames),
+            alternative = "greater"
+          )
+        }
+      } else {
+        dcor_matrix <- ustat_dcor_matrix_cpp(input$data)
+      }
 
-    if (isTRUE(p_value)) {
-      inference_attr <- list(
-        method = "dcor_t_test",
-        estimate = .mc_set_matrix_dimnames(unclass(pairwise$estimate), colnames_data),
-        statistic = .mc_set_matrix_dimnames(unclass(pairwise$statistic), colnames_data),
-        parameter = .mc_set_matrix_dimnames(unclass(pairwise$parameter), colnames_data),
-        p_value = .mc_set_matrix_dimnames(unclass(pairwise$p_value), colnames_data),
-        alternative = "greater"
+      .mc_finalize_corr_result(
+        mat = dcor_matrix,
+        class_name = "dcor",
+        method = "distance_correlation",
+        description = "Pairwise distance correlation matrix (unbiased)",
+        output_cfg = output_cfg,
+        diagnostics = .mc_merge_diagnostics(diagnostics, input$diagnostics),
+        dimnames = input$dimnames,
+        symmetric = TRUE,
+        extra_attrs = if (!is.null(inference_attr)) list(inference = inference_attr)
       )
     }
-  } else {
-    dcor_matrix <- ustat_dcor_matrix_cpp(numeric_data)
-  }
-
-  out <- .mc_structure_corr_matrix(
-    dcor_matrix,
-    class_name = "dcor",
-    method = "distance_correlation",
-    description = "Pairwise distance correlation matrix (unbiased)",
-    diagnostics = diagnostics,
-    dimnames = dn,
-    extra_attrs = if (!is.null(inference_attr)) list(inference = inference_attr)
   )
-  .mc_finalize_corr_output(
-    out,
-    output = output_cfg$output,
-    threshold = output_cfg$threshold,
-    diag = output_cfg$diag
-  )
-}
-
-.mc_dcor_inference_attr <- function(x) {
-  attr(x, "inference", exact = TRUE)
 }
 
 .mc_dcor_pairwise_summary <- function(object,
                                       digits = 4,
                                       p_digits = 4) {
   check_inherits(object, "dcor")
-  est <- as.matrix(object)
-  rn <- rownames(est); cn <- colnames(est)
-  if (is.null(rn)) rn <- as.character(seq_len(nrow(est)))
-  if (is.null(cn)) cn <- as.character(seq_len(ncol(est)))
 
-  inf <- .mc_dcor_inference_attr(object)
-  diag_attr <- attr(object, "diagnostics", exact = TRUE)
-
-  n_pairs <- nrow(est) * (ncol(est) - 1L) / 2L
-  var1 <- character(n_pairs)
-  var2 <- character(n_pairs)
-  estimate <- numeric(n_pairs)
-  n_complete <- if (is.list(diag_attr) && is.matrix(diag_attr$n_complete)) integer(n_pairs) else NULL
-  statistic <- if (is.list(inf)) numeric(n_pairs) else NULL
-  df_param <- if (is.list(inf)) numeric(n_pairs) else NULL
-  p_value <- if (is.list(inf)) numeric(n_pairs) else NULL
-  k <- 0L
-  for (i in seq_len(nrow(est) - 1L)) {
-    for (j in (i + 1L):ncol(est)) {
-      k <- k + 1L
-      var1[k] <- rn[i]
-      var2[k] <- cn[j]
-      estimate[k] <- round(est[i, j], digits)
-      if (!is.null(n_complete)) n_complete[k] <- as.integer(diag_attr$n_complete[i, j])
-      if (is.list(inf)) {
-        statistic[k] <- if (is.matrix(inf$statistic) && is.finite(inf$statistic[i, j])) round(inf$statistic[i, j], digits) else NA_real_
-        df_param[k] <- if (is.matrix(inf$parameter) && is.finite(inf$parameter[i, j])) round(inf$parameter[i, j], digits) else NA_real_
-        p_value[k] <- if (is.matrix(inf$p_value) && is.finite(inf$p_value[i, j])) round(inf$p_value[i, j], p_digits) else NA_real_
-      }
-    }
-  }
-
-  df <- data.frame(
-    var1 = var1,
-    var2 = var2,
-    estimate = as.numeric(estimate),
-    stringsAsFactors = FALSE,
-    check.names = FALSE
+  inf <- .mc_inference_attr(object)
+  has_p <- is.list(inf) && is.matrix(inf$p_value)
+  .mc_pairwise_matrix_summary(
+    object,
+    class_name = "summary.dcor",
+    digits = digits,
+    p_digits = p_digits,
+    include_ci = FALSE,
+    include_p = has_p,
+    extra_columns = if (is.list(inf)) {
+      list(
+        statistic = list(matrix = inf$statistic, digits = digits),
+        df = list(matrix = inf$parameter, digits = digits),
+        p_value = list(matrix = inf$p_value, digits = p_digits)
+      )
+    },
+    extra_attrs = list(
+      inference_method = if (isTRUE(has_p)) inf$method %||% NA_character_ else NA_character_
+    )
   )
-  if (!is.null(n_complete)) df$n_complete <- as.integer(n_complete)
-  if (!is.null(statistic)) {
-    df$statistic <- as.numeric(statistic)
-    df$df <- as.numeric(df_param)
-    df$p_value <- as.numeric(p_value)
-  }
-  rownames(df) <- NULL
-
-  out <- .mc_finalize_summary_df(df, class_name = "summary.dcor")
-  attr(out, "overview") <- .mc_summary_corr_matrix(object)
-  attr(out, "has_p") <- TRUE
-  attr(out, "digits") <- digits
-  attr(out, "p_digits") <- p_digits
-  attr(out, "inference_method") <- inf$method %||% NA_character_
-  out
 }
 
 #' @rdname dcor
@@ -424,8 +378,8 @@ summary.dcor <- function(object, n = NULL, topn = NULL,
                          max_vars = NULL, width = NULL,
                          show_ci = NULL, ...) {
   check_inherits(object, "dcor")
-  inf <- .mc_dcor_inference_attr(object)
-  if (is.null(inf) || is.null(inf$p_value)) {
+  inf <- .mc_inference_attr(object)
+  if (!is.list(inf) || !is.matrix(inf$p_value)) {
     return(.mc_summary_corr_matrix(object, topn = topn))
   }
   .mc_dcor_pairwise_summary(object)
@@ -452,4 +406,5 @@ print.summary.dcor <- function(x, digits = NULL, n = NULL,
   )
   invisible(x)
 }
+
 

@@ -42,28 +42,6 @@ summary.corr_sparse <- function(object, topn = NULL, show_ci = NULL, ...) {
   )
 }
 
-#' S3 Summary for Packed-Upper Correlation Results
-#'
-#' Representation-first summary for packed upper-triangle outputs.
-#'
-#' @param object A packed upper-triangle correlation result.
-#' @param topn Optional number of head/tail rows when preview is truncated.
-#' @param show_ci One of `"yes"` or `"no"`.
-#' @param ... Unused.
-#'
-#' @return A standardized summary data frame with class
-#'   `c("summary.corr_result", "data.frame")` (plus compatibility classes).
-#' @method summary corr_packed_upper
-#' @export
-summary.corr_packed_upper <- function(object, topn = NULL, show_ci = NULL, ...) {
-  .mc_summary_corr_result(
-    object,
-    output_class = "summary.corr_packed_upper",
-    topn = topn,
-    show_ci = show_ci
-  )
-}
-
 #' S3 Summary for Edge-List Correlation Results
 #'
 #' Representation-first summary for edge-list outputs.
@@ -132,8 +110,8 @@ summary.dgCMatrix <- function(object, topn = NULL, show_ci = NULL, ...) {
   NextMethod()
 }
 
-#' @title Print Packed-Upper Correlation Results
-#' @param x A packed-upper correlation result.
+#' @title Print Edge-List Correlation Results
+#' @param x An edge-list correlation result.
 #' @param digits Number of digits for numeric values.
 #' @param n Optional preview row threshold.
 #' @param topn Optional number of head/tail rows when preview is truncated.
@@ -141,34 +119,6 @@ summary.dgCMatrix <- function(object, topn = NULL, show_ci = NULL, ...) {
 #' @param width Optional output width.
 #' @param show_ci One of `"yes"` or `"no"`.
 #' @param ... Unused.
-#' @return Invisibly returns `x`.
-#' @method print corr_packed_upper
-#' @export
-print.corr_packed_upper <- function(x,
-                                    digits = 4,
-                                    n = NULL,
-                                    topn = NULL,
-                                    max_vars = NULL,
-                                    width = NULL,
-                                    show_ci = NULL,
-                                    ...) {
-  .mc_print_corr_records(
-    x,
-    output_label = "packed upper",
-    digits = digits,
-    n = n,
-    topn = topn,
-    max_vars = max_vars,
-    width = width,
-    show_ci = show_ci,
-    ...
-  )
-  invisible(x)
-}
-
-#' @title Print Edge-List Correlation Results
-#' @param x An edge-list correlation result.
-#' @inheritParams print.corr_packed_upper
 #' @method print corr_edge_list
 #' @export
 print.corr_edge_list <- function(x,
@@ -264,33 +214,57 @@ print.summary.corr_result <- function(x,
     }
   }
   if (identical(cfg$show_ci, "yes")) {
+    summary_df <- as.data.frame(x, stringsAsFactors = FALSE)
     digest <- c(
       digest,
       .mc_ci_digest(
-        as.data.frame(x, stringsAsFactors = FALSE),
+        summary_df,
         conf_level = suppressWarnings(as.numeric(attr(x, "conf.level", exact = TRUE))),
         ci_method = attr(x, "ci_method", exact = TRUE) %||%
           (attr(x, "overview", exact = TRUE)$ci_method %||% NULL),
         digits = 3
       )
     )
+    constant_m <- .mc_single_display_value(summary_df$m)
+    if (!is.null(constant_m)) {
+      digest <- c(digest, m = constant_m)
+    }
+    constant_boot <- .mc_single_display_value(summary_df$bootstrap_reps)
+    if (!is.null(constant_boot)) {
+      digest <- c(digest, boot_reps = constant_boot)
+    }
+    se_vals <- suppressWarnings(as.numeric(summary_df$se))
+    se_vals <- se_vals[is.finite(se_vals)]
+    if (length(se_vals)) {
+      se_txt <- .mc_format_scalar_or_range(
+        min(se_vals),
+        max(se_vals),
+        digits = 3,
+        integer = FALSE
+      )
+      if (!is.null(se_txt)) {
+        digest <- c(digest, se = se_txt)
+      }
+    }
   }
   digest <- digest[!is.na(digest) & nzchar(digest)]
   .mc_print_named_digest(digest, header = header)
   cat("\n")
 
   preview <- as.data.frame(x, stringsAsFactors = FALSE, check.names = FALSE)
-  if (identical(cfg$show_ci, "no")) {
-    preview <- preview[, setdiff(names(preview), c("lwr", "upr")), drop = FALSE]
-  }
-  if (nrow(preview)) {
-    if ("estimate" %in% names(preview)) {
-      preview$estimate <- formatC(as.numeric(preview$estimate), format = "f", digits = digits)
-    }
-    for (nm in intersect(c("lwr", "upr", "statistic", "df", "p_value", "fisher_z"), names(preview))) {
-      preview[[nm]] <- formatC(as.numeric(preview[[nm]]), format = "f", digits = digits)
-    }
-  }
+  ci_digits <- .mc_coalesce(attr(x, "ci_digits", exact = TRUE), digits)
+  preview <- .mc_compact_corr_summary_table(
+    preview,
+    show_ci = cfg$show_ci,
+    conf_level = suppressWarnings(as.numeric(attr(x, "conf.level", exact = TRUE))),
+    digits = digits,
+    ci_digits = ci_digits
+  )
+  preview <- .mc_format_summary_numeric_table(
+    preview,
+    digits = digits,
+    ci_digits = ci_digits
+  )
   .mc_print_preview_table(
     preview,
     n = cfg$n,
@@ -301,24 +275,87 @@ print.summary.corr_result <- function(x,
     full_hint = TRUE,
     summary_hint = FALSE
   )
-  top_tbl <- attr(x, "top_results", exact = TRUE)
-  if (is.data.frame(top_tbl) && nrow(top_tbl)) {
-    if (identical(cfg$show_ci, "no")) {
-      top_tbl <- top_tbl[, setdiff(names(top_tbl), c("lwr", "upr")), drop = FALSE]
+  invisible(x)
+}
+
+.mc_single_display_value <- function(x) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+  vals <- unique(x[!is.na(x)])
+  if (length(vals) != 1L) {
+    return(NULL)
+  }
+  if (is.numeric(vals)) {
+    vals <- vals[is.finite(vals)]
+    if (length(vals) != 1L) {
+      return(NULL)
     }
-    cat("\nStrongest pairs by |estimate|\n\n")
-    .mc_print_preview_table(
-      top_tbl,
-      n = max(2L, nrow(top_tbl) + 1L),
-      topn = min(cfg$topn, max(1L, nrow(top_tbl))),
-      max_vars = cfg$max_vars,
-      width = cfg$width,
-      context = "summary",
-      full_hint = TRUE,
-      summary_hint = FALSE
+    return(format(vals[[1L]], trim = TRUE, scientific = FALSE))
+  }
+  vals <- as.character(vals)
+  if (!nzchar(vals[[1L]])) {
+    return(NULL)
+  }
+  vals[[1L]]
+}
+
+.mc_compact_corr_summary_table <- function(df,
+                                           show_ci = "yes",
+                                           conf_level = NA_real_,
+                                           digits = 4,
+                                           ci_digits = digits) {
+  if (!is.data.frame(df) || !nrow(df)) {
+    return(df)
+  }
+
+  out <- df
+  if ("n_complete" %in% names(out)) {
+    names(out)[match("n_complete", names(out))] <- "n"
+  }
+
+  if (identical(show_ci, "yes") && all(c("lwr", "upr") %in% names(out))) {
+    ci_label <- if (is.finite(conf_level)) {
+      sprintf("%g%% CI", 100 * conf_level)
+    } else {
+      "CI"
+    }
+    lwr <- suppressWarnings(as.numeric(out$lwr))
+    upr <- suppressWarnings(as.numeric(out$upr))
+    out[[ci_label]] <- ifelse(
+      is.finite(lwr) & is.finite(upr),
+      sprintf(
+        "[%s, %s]",
+        formatC(lwr, format = "f", digits = ci_digits),
+        formatC(upr, format = "f", digits = ci_digits)
+      ),
+      NA_character_
     )
   }
-  invisible(x)
+
+  always_drop <- c(
+    "lwr", "upr", "fisher_z", "statistic", "df", "se",
+    "bootstrap_reps", "skipped_n", "skipped_prop"
+  )
+  if (identical(show_ci, "no")) {
+    always_drop <- c(always_drop, grep("CI$", names(out), value = TRUE))
+  }
+
+  if ("ci_method" %in% names(out) && !is.null(.mc_single_display_value(out$ci_method))) {
+    always_drop <- c(always_drop, "ci_method")
+  }
+  if ("m" %in% names(out) && !is.null(.mc_single_display_value(out$m))) {
+    always_drop <- c(always_drop, "m")
+  }
+  out <- out[, setdiff(names(out), always_drop), drop = FALSE]
+
+  preferred <- c(
+    "item1", "item2", "estimate", "n",
+    grep("CI$", names(out), value = TRUE),
+    "p_value", "p_value_adjusted", "ci_method", "m"
+  )
+  preferred <- unique(preferred[preferred %in% names(out)])
+  out[, c(preferred, setdiff(names(out), preferred)), drop = FALSE]
 }
 
 #' S3 Plot for Dense Correlation Results
@@ -376,34 +413,6 @@ plot.corr_sparse <- function(x,
   .mc_plot_corr_result(
     x,
     title = title %||% "Retained sparse correlation heatmap",
-    low_color = low_color,
-    high_color = high_color,
-    mid_color = mid_color,
-    value_text_size = value_text_size,
-    ci_text_size = ci_text_size,
-    show_value = show_value,
-    ...
-  )
-}
-
-#' S3 Plot for Packed-Upper Correlation Results
-#'
-#' @inheritParams plot.corr_matrix
-#' @param x A packed-upper correlation result.
-#' @method plot corr_packed_upper
-#' @export
-plot.corr_packed_upper <- function(x,
-                                   title = NULL,
-                                   low_color = "indianred1",
-                                   high_color = "steelblue1",
-                                   mid_color = "white",
-                                   value_text_size = 4,
-                                   ci_text_size = 3,
-                                   show_value = TRUE,
-                                   ...) {
-  .mc_plot_corr_result(
-    x,
-    title = title %||% "Packed upper-triangle correlation heatmap",
     low_color = low_color,
     high_color = high_color,
     mid_color = mid_color,
@@ -581,6 +590,22 @@ plot.dgCMatrix <- function(x,
   if (is.list(diag_attr) && is.matrix(diag_attr$n_complete)) {
     pairs$n_complete <- as.integer(round(add_from_matrix(diag_attr$n_complete)))
   }
+  if (identical(estimator_class, "chatterjee_xi") && is.list(diag_attr)) {
+    if (is.matrix(diag_attr$ci_method)) {
+      method_vals <- rep(NA_character_, nrow(pairs))
+      method_vals[idx_ok] <- as.character(diag_attr$ci_method[cbind(ii[idx_ok], jj[idx_ok])])
+      pairs$ci_method <- method_vals
+    }
+    if (is.matrix(diag_attr$m)) {
+      pairs$m <- as.integer(round(add_from_matrix(diag_attr$m)))
+    }
+    if (is.matrix(diag_attr$se)) {
+      pairs$se <- as.numeric(add_from_matrix(diag_attr$se))
+    }
+    if (!is.null(diag_attr$bootstrap_reps)) {
+      pairs$bootstrap_reps <- as.integer(diag_attr$bootstrap_reps[[1L]])
+    }
+  }
 
   ci_attr <- attr(object, "ci", exact = TRUE)
   if (is.list(ci_attr)) {
@@ -596,7 +621,7 @@ plot.dgCMatrix <- function(x,
     if (is.matrix(inf$p_value)) pairs$p_value <- as.numeric(add_from_matrix(inf$p_value))
   } else {
     needs_fallback <- estimator_class %in% c(
-      "bicor", "dcor", "pearson_corr", "spearman_rho",
+      "bicor", "pearson_corr", "spearman_rho",
       "kendall_matrix", "pbcor", "wincor", "skipped_corr",
       "partial_corr_matrix"
     )
@@ -655,9 +680,24 @@ plot.dgCMatrix <- function(x,
   attr(pairs, "has_ci") <- any(c("lwr", "upr") %in% names(pairs))
   attr(pairs, "has_p") <- "p_value" %in% names(pairs)
   attr(pairs, "conf.level") <- overview$conf.level
-  attr(pairs, "ci_method") <- attr(object, "ci", exact = TRUE)$ci.method %||%
+  ci_method_attr <- attr(object, "ci", exact = TRUE)$ci.method %||%
     attr(object, "ci.method", exact = TRUE) %||%
     NA_character_
+  if (is.list(ci_method_attr)) {
+    ci_method_attr <- NA_character_
+  } else if (length(ci_method_attr) != 1L) {
+    method_values <- unique(as.character(ci_method_attr))
+    method_values <- method_values[!is.na(method_values) & nzchar(method_values)]
+    ci_method_attr <- if (length(method_values) == 1L) {
+      method_values
+    } else if (length(method_values) > 1L) {
+      "mixed"
+    } else {
+      NA_character_
+    }
+  }
+  ci_method_attr <- as.character(ci_method_attr)[[1L]]
+  attr(pairs, "ci_method") <- ci_method_attr
   if ((is.null(attr(pairs, "ci_method", exact = TRUE)) ||
        is.na(attr(pairs, "ci_method", exact = TRUE)) ||
        !nzchar(attr(pairs, "ci_method", exact = TRUE))) &&
@@ -697,10 +737,14 @@ plot.dgCMatrix <- function(x,
   }
   map <- c(
     pearson_corr = "Pearson correlation summary",
+    chatterjee_xi = "Chatterjee xi directed-dependence summary",
     spearman_rho = if (isTRUE(has_ci) || isTRUE(has_p)) "Spearman correlation summary" else "Correlation summary",
     kendall_matrix = "Kendall correlation summary",
+    cohen_kappa = "Cohen's kappa agreement summary",
+    weighted_kappa = "Weighted Cohen's kappa agreement summary",
     bicor = "Biweight mid-correlation summary",
     dcor = "Distance correlation summary",
+    robust_dcor = "Robust distance correlation summary",
     pbcor = "Percentage bend correlation summary",
     wincor = "Winsorized correlation summary",
     skipped_corr = "Skipped correlation summary",
@@ -901,6 +945,14 @@ plot.dgCMatrix <- function(x,
                                  ci_text_size,
                                  show_value,
                                  ...) {
+  dots <- list(...)
+  if ("type" %in% names(dots)) {
+    abort_bad_arg(
+      "type",
+      message = "is not used for matrix-style correlation heatmaps.",
+      .hint = "For estimator-specific plot modes such as {.arg type} = {.val estimate}, use a non-matrix result object."
+    )
+  }
   check_bool(show_value, arg = "show_value")
   df <- .mc_corr_plot_grid(x)
   if (!"ci_label" %in% names(df)) {

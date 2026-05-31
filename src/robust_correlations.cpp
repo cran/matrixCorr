@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <random>
+#include "correlation_math.h"
 #include "matrixCorr_omp.h"
 
 #include "matrixCorr_detail.h"
@@ -16,15 +17,9 @@
 using namespace Rcpp;
 using namespace arma;
 using matrixCorr_detail::ranking::rank_vector;
+using matrixCorr::correlation_math::clamp_corr_nan;
 
 namespace {
-
-inline double clamp_corr(double x) {
-  if (!std::isfinite(x)) return arma::datum::nan;
-  if (x > 1.0) return 1.0;
-  if (x < -1.0) return -1.0;
-  return x;
-}
 
 inline double median_sorted_vec(const arma::vec& xs) {
   const arma::uword n = xs.n_elem;
@@ -152,7 +147,7 @@ inline double pearson_vec_core(const arma::vec& x, const arma::vec& y) {
   const double dx = arma::dot(xc, xc);
   const double dy = arma::dot(yc, yc);
   if (!(dx > 0.0) || !(dy > 0.0)) return arma::datum::nan;
-  return clamp_corr(arma::dot(xc, yc) / std::sqrt(dx * dy));
+  return clamp_corr_nan(arma::dot(xc, yc) / std::sqrt(dx * dy));
 }
 
 inline double spearman_vec_core(const arma::vec& x, const arma::vec& y) {
@@ -247,7 +242,7 @@ inline double pbcor_pair_complete_core(const arma::vec& x,
   const double da = arma::dot(a, a);
   const double db = arma::dot(b, b);
   if (!(da > 0.0) || !(db > 0.0)) return arma::datum::nan;
-  return clamp_corr(arma::dot(a, b) / std::sqrt(da * db));
+  return clamp_corr_nan(arma::dot(a, b) / std::sqrt(da * db));
 }
 
 inline void standardise_win_column(const arma::vec& x,
@@ -364,6 +359,39 @@ inline bool extract_overlap_pair(const arma::uvec& idx_j,
     ybuf[t] = colk_ptr[row];
   }
   return true;
+}
+
+inline std::size_t extract_overlap_pair_values(const arma::uvec& idx_j,
+                                               const arma::uvec& idx_k,
+                                               const double* colj_ptr,
+                                               const double* colk_ptr,
+                                               arma::vec& xbuf,
+                                               arma::vec& ybuf) {
+  const std::size_t possible = std::min(idx_j.n_elem, idx_k.n_elem);
+  if (possible == 0u) return 0u;
+
+  if (xbuf.n_elem < possible) xbuf.set_size(possible);
+  if (ybuf.n_elem < possible) ybuf.set_size(possible);
+
+  arma::uword ia = 0, ib = 0;
+  std::size_t used = 0u;
+  while (ia < idx_j.n_elem && ib < idx_k.n_elem) {
+    const arma::uword a_val = idx_j[ia];
+    const arma::uword b_val = idx_k[ib];
+    if (a_val == b_val) {
+      xbuf[static_cast<arma::uword>(used)] = colj_ptr[a_val];
+      ybuf[static_cast<arma::uword>(used)] = colk_ptr[b_val];
+      ++used;
+      ++ia;
+      ++ib;
+    } else if (a_val < b_val) {
+      ++ia;
+    } else {
+      ++ib;
+    }
+  }
+
+  return used;
 }
 
 struct SkipMaskEntry {
@@ -529,7 +557,7 @@ inline double skipcor_pair_core_ptr(const double* x_orig,
     syy += dy * dy;
   }
   if (!(sxx > 0.0) || !(syy > 0.0)) return arma::datum::nan;
-  return clamp_corr(sxy / std::sqrt(sxx * syy));
+  return clamp_corr_nan(sxy / std::sqrt(sxx * syy));
 }
 
 template <class RNG>
@@ -867,7 +895,7 @@ arma::mat pbcor_matrix_cpp(const arma::mat& X,
   }
 
   arma::mat R = arma::symmatu(A.t() * A);
-  R.transform([](double val) { return clamp_corr(val); });
+  R.transform([](double val) { return clamp_corr_nan(val); });
 
   for (std::size_t j = 0; j < p; ++j) {
     if (col_valid[j] == 0u) {
@@ -932,7 +960,7 @@ Rcpp::List pbcor_threshold_triplets_cpp(const arma::mat& X,
           if (gj == gk) {
             val = 1.0;
           } else if (col_valid[gj] && col_valid[gk]) {
-            val = clamp_corr(blk(
+            val = clamp_corr_nan(blk(
               static_cast<arma::uword>(r),
               static_cast<arma::uword>(c)
             ));
@@ -954,6 +982,9 @@ arma::mat pbcor_matrix_pairwise_cpp(const arma::mat& X,
                                     const int n_threads = 1) {
   const std::size_t n = X.n_rows, p = X.n_cols;
   if (p == 0 || n < 2) stop("X must have >=2 rows and >=1 column.");
+  if (X.is_finite() && static_cast<int>(n) >= min_n) {
+    return pbcor_matrix_cpp(X, beta, n_threads);
+  }
 
   arma::mat R(p, p, fill::none);
   R.fill(arma::datum::nan);
@@ -970,14 +1001,18 @@ arma::mat pbcor_matrix_pairwise_cpp(const arma::mat& X,
     for (std::size_t k = static_cast<std::size_t>(j); k < p; ++k) {
       if (k == static_cast<std::size_t>(j)) continue;
       const arma::uvec& idx_k = finite_idx[k];
-      static thread_local std::vector<arma::uword> overlap_idx;
       static thread_local arma::vec xbuf;
       static thread_local arma::vec ybuf;
       const double* colj_ptr = X.colptr(static_cast<arma::uword>(j));
       const double* colk_ptr = X.colptr(static_cast<arma::uword>(k));
-      if (!extract_overlap_pair(idx_j, idx_k, colj_ptr, colk_ptr, min_n, overlap_idx, xbuf, ybuf)) continue;
+      const std::size_t overlap_n = extract_overlap_pair_values(
+        idx_j, idx_k, colj_ptr, colk_ptr, xbuf, ybuf
+      );
+      if (overlap_n < static_cast<std::size_t>(min_n)) continue;
 
-      const double val = pbcor_pair_complete_core(xbuf, ybuf, beta);
+      const arma::vec xview(xbuf.memptr(), static_cast<arma::uword>(overlap_n), false, true);
+      const arma::vec yview(ybuf.memptr(), static_cast<arma::uword>(overlap_n), false, true);
+      const double val = pbcor_pair_complete_core(xview, yview, beta);
       R(j, k) = val;
       R(k, j) = val;
     }
@@ -1021,7 +1056,7 @@ arma::mat wincor_matrix_cpp(const arma::mat& X,
   }
 
   arma::mat R = arma::symmatu(Z.t() * Z);
-  R.transform([](double val) { return clamp_corr(val); });
+  R.transform([](double val) { return clamp_corr_nan(val); });
 
   for (std::size_t j = 0; j < p; ++j) {
     if (col_valid[j] == 0u) {
@@ -1083,7 +1118,7 @@ Rcpp::List wincor_threshold_triplets_cpp(const arma::mat& X,
           if (gj == gk) {
             val = 1.0;
           } else if (col_valid[gj] && col_valid[gk]) {
-            val = clamp_corr(blk(
+            val = clamp_corr_nan(blk(
               static_cast<arma::uword>(r),
               static_cast<arma::uword>(c)
             ));
@@ -1105,6 +1140,9 @@ arma::mat wincor_matrix_pairwise_cpp(const arma::mat& X,
                                      const int n_threads = 1) {
   const std::size_t n = X.n_rows, p = X.n_cols;
   if (p == 0 || n < 2) stop("X must have >=2 rows and >=1 column.");
+  if (X.is_finite() && static_cast<int>(n) >= min_n) {
+    return wincor_matrix_cpp(X, tr, n_threads);
+  }
 
   arma::mat R(p, p, fill::none);
   R.fill(arma::datum::nan);
@@ -1121,20 +1159,24 @@ arma::mat wincor_matrix_pairwise_cpp(const arma::mat& X,
     for (std::size_t k = static_cast<std::size_t>(j); k < p; ++k) {
       if (k == static_cast<std::size_t>(j)) continue;
       const arma::uvec& idx_k = finite_idx[k];
-      static thread_local std::vector<arma::uword> overlap_idx;
       static thread_local arma::vec xbuf;
       static thread_local arma::vec ybuf;
       const double* colj_ptr = X.colptr(static_cast<arma::uword>(j));
       const double* colk_ptr = X.colptr(static_cast<arma::uword>(k));
-      if (!extract_overlap_pair(idx_j, idx_k, colj_ptr, colk_ptr, min_n, overlap_idx, xbuf, ybuf)) continue;
+      const std::size_t overlap_n = extract_overlap_pair_values(
+        idx_j, idx_k, colj_ptr, colk_ptr, xbuf, ybuf
+      );
+      if (overlap_n < static_cast<std::size_t>(min_n)) continue;
 
       static thread_local arma::vec zj;
       static thread_local arma::vec zk;
       bool okj = false, okk = false;
-      standardise_win_column(xbuf, zj, tr, okj);
-      standardise_win_column(ybuf, zk, tr, okk);
+      const arma::vec xview(xbuf.memptr(), static_cast<arma::uword>(overlap_n), false, true);
+      const arma::vec yview(ybuf.memptr(), static_cast<arma::uword>(overlap_n), false, true);
+      standardise_win_column(xview, zj, tr, okj);
+      standardise_win_column(yview, zk, tr, okk);
       double val = arma::datum::nan;
-      if (okj && okk) val = clamp_corr(arma::dot(zj, zk));
+      if (okj && okk) val = clamp_corr_nan(arma::dot(zj, zk));
       R(j, k) = val;
       R(k, j) = val;
     }

@@ -77,10 +77,8 @@ fitted variance components and \eqn{S_B} for each fit. Default \code{FALSE}.}
 \item{digits}{Integer \eqn{(\ge 0)}. Number of decimal places to use in the
 printed summary when \code{verbose = TRUE}. Default \code{4}.}
 
-\item{use_message}{Logical. When \code{verbose = TRUE}, choose the printing
-mechanism, where \code{TRUE} uses \code{message()} (respects \code{sink()},
-easily suppressible via \code{suppressMessages()}), whereas \code{FALSE}
-uses \code{cat()} to \code{stdout}. Default \code{TRUE}.}
+\item{use_message}{Logical. When \code{verbose = TRUE}, verbose summaries
+are emitted with \pkg{cli} messages.}
 
 \item{interaction}{Logical. Include \code{method:time} interaction?
 (default \code{FALSE}).}
@@ -508,9 +506,9 @@ introduce correlations.
 \section{Threading and BLAS guards}{
 
 The C++ backend uses OpenMP loops while also forcing vendor BLAS libraries to
-run single-threaded so that overall CPU usage stays predictable. On OpenBLAS
-and Apple's Accelerate this is handled automatically. On Intel MKL builds the
-guard is disabled by default, but you can also opt out manually by setting
+run single-threaded so that overall CPU usage stays predictable. This guard
+is applied to OpenBLAS, Apple's Accelerate, and Intel MKL when their runtime
+controls are available. You can opt out manually by setting
 \code{MATRIXCORR_DISABLE_BLAS_GUARD=1} in the environment before loading
 \pkg{matrixCorr}.
 }
@@ -571,8 +569,12 @@ dat_both <- data.frame(y, id, method, time)
 
 # Both sigma2_subject_method and sigma2_subject_time are identifiable here
 fit_both <- ccc_rm_reml(dat_both, "y", "id", method = "method", time = "time",
-                         vc_select = "auto", verbose = TRUE)
+                         vc_select = "auto", ci = TRUE, verbose = TRUE)
 summary(fit_both)
+estimate(fit_both)
+tidy(fit_both)
+ci(fit_both)
+confint(fit_both)
 plot(fit_both)
 
 # Interactive viewing (requires shiny)
@@ -698,9 +700,12 @@ for (s in seq_len(n_subj)) {
 y <- mu + u + e
 dat_ar4 <- data.frame(y = y, id = id, method = method, time = time)
 
-ccc_rm_reml(dat_ar4,
+fit4 <- ccc_rm_reml(dat_ar4,
              response = "y", subject = "id", method = "method", time = "time",
              ar = "ar1", ar_rho = 0.6, verbose = TRUE)
+fit4
+summary(fit4)
+plot(fit4)
 }
 
 # ====================================================================

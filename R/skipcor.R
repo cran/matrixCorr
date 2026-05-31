@@ -13,16 +13,17 @@
 #' columns. All non-numeric columns will be excluded.
 #' @param method Correlation computed after removing projected outliers. One of
 #'   \code{"pearson"} (default) or \code{"spearman"}.
-#' @param na_method One of \code{"error"} (default) or \code{"pairwise"}.
+#' @param na_method Character scalar controlling missing-data handling.
 #'   With \code{"error"}, the function requires all retained numeric columns to
 #'   be free of missing or non-finite values and aborts otherwise. This is the
 #'   recommended setting when you want a single common sample size across all
 #'   pairs, reproducible skipped-row diagnostics on the same rows, or bootstrap
-#'   inference via \code{ci = TRUE} / \code{p_value = TRUE}. With
-#'   \code{"pairwise"}, each variable pair is computed on its own overlap of
-#'   finite rows. This is more permissive for incomplete data, but different
-#'   pairs can be based on different effective samples and different skipped-row
-#'   sets, so the resulting matrix is less directly comparable across entries.
+#'   inference via \code{ci = TRUE} / \code{p_value = TRUE}.
+#'   \code{"pairwise"} recomputes each estimate on its own pairwise
+#'   complete-case overlap. This is permissive, but different matrix entries
+#'   may be based on different rows. \code{"complete"} performs listwise
+#'   deletion once across the retained numeric columns and then computes the
+#'   estimator on the common complete sample.
 #' @param stand Logical; if \code{TRUE} (default), each variable in the pair is
 #'   centred by its median and divided by a robust scale estimate before the
 #'   projection outlier search. The scale estimate is the MAD when positive,
@@ -158,7 +159,10 @@
 #' than for marginal robust methods. The implementation evaluates pairs in
 #' 'C++'; where available, pairs are processed with 'OpenMP' parallelism. With
 #' \code{na_method = "pairwise"}, each pair is recomputed on its overlap of
-#' non-missing rows.
+#' non-missing rows. With \code{na_method = "complete"}, rows with any
+#' non-finite value across the retained numeric columns are removed before any
+#' pairwise outlier search. This gives a common row universe for all
+#' skipped-correlation masks.
 #'
 #' \strong{Bootstrap inference.} When \code{ci = TRUE} or \code{p_value = TRUE},
 #' the implementation uses the percentile-bootstrap strategy studied by Wilcox
@@ -168,7 +172,8 @@
 #' observations. This corresponds to Wilcox's B2 method and avoids the
 #' statistically unsatisfactory shortcut of removing outliers only once before
 #' bootstrapping. Bootstrap inference currently requires complete data
-#' (\code{na_method = "error"}). When \code{p_adjust = "hochberg"}, the
+#' (\code{na_method = "error"} or \code{"complete"}). When
+#' \code{p_adjust = "hochberg"}, the
 #' bootstrap p-values are processed with Hochberg's step-up procedure (method H
 #' in Wilcox, Rousselet, and Pernet, 2018). When \code{p_adjust = "ecp"}, the
 #' package follows their ECP method and simulates \code{n_mc} null data sets
@@ -218,7 +223,9 @@
 #'
 #' # Example 2:
 #' Ri <- skipped_corr(Xm, method = "pearson", ci = TRUE, n_boot = 40, seed = 1)
-#' Ri$ci
+#' ci(Ri)
+#' confint(Ri)
+#' tidy(Ri)
 #'
 #' # Interactive viewing (requires shiny)
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
@@ -229,7 +236,7 @@
 #' @export
 skipped_corr <- function(data,
                     method = c("pearson", "spearman"),
-                    na_method = c("error", "pairwise"),
+                    na_method = c("error", "pairwise", "complete"),
                     ci = FALSE,
                     p_value = FALSE,
                     conf_level = 0.95,
@@ -260,21 +267,37 @@ skipped_corr <- function(data,
   check_bool(ci, arg = "ci")
   check_bool(p_value, arg = "p_value")
   check_scalar_numeric(cutoff, arg = "cutoff", lower = 0, closed_lower = FALSE)
-  check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
-  check_prob_scalar(fwe_level, arg = "fwe_level", open_ends = TRUE)
   n_threads <- check_scalar_int_pos(n_threads, arg = "n_threads")
-  n_boot <- check_scalar_int_pos(n_boot, arg = "n_boot")
-  n_mc <- check_scalar_int_pos(n_mc, arg = "n_mc")
-  if (n_mc < 10L) {
-    abort_bad_arg("n_mc", message = "must be >= 10.")
+  do_inference <- isTRUE(ci) || isTRUE(p_value)
+  if (isTRUE(ci)) {
+    conf_level <- check_prob_scalar(conf_level, arg = "conf_level", open_ends = TRUE)
+  } else {
+    conf_level <- 0.95
   }
-  if (!is.null(seed)) {
+  if (isTRUE(do_inference)) {
+    n_boot <- check_scalar_int_pos(n_boot, arg = "n_boot")
+  } else {
+    n_boot <- 1L
+  }
+  if (isTRUE(p_value) && identical(p_adjust, "ecp")) {
+    check_prob_scalar(fwe_level, arg = "fwe_level", open_ends = TRUE)
+    n_mc <- check_scalar_int_pos(n_mc, arg = "n_mc")
+    if (n_mc < 10L) {
+      abort_bad_arg("n_mc", message = "must be >= 10.")
+    }
+  } else {
+    fwe_level <- 0.05
+    n_mc <- 10L
+  }
+  if (isTRUE(do_inference) && !is.null(seed)) {
     seed <- check_scalar_int_pos(seed, arg = "seed")
+  } else {
+    seed <- NULL
   }
-  if ((isTRUE(ci) || isTRUE(p_value)) && na_method != "error") {
+  if (isTRUE(do_inference) && identical(na_method, "pairwise")) {
     abort_bad_arg(
       "na_method",
-      message = "{.arg ci} and {.arg p_value} currently require {.code na_method = \"error\"}."
+      message = "{.arg ci} and {.arg p_value} currently require {.code na_method = \"error\"} or {.code na_method = \"complete\"}."
     )
   }
   if (!isTRUE(p_value) && !identical(p_adjust, "none")) {
@@ -289,12 +312,22 @@ skipped_corr <- function(data,
   } else {
     validate_corr_input(data, check_na = FALSE)
   }
+  diagnostics_extra <- NULL
+  if (identical(na_method, "complete")) {
+    cc <- .mc_complete_case_matrix(numeric_data, min_n = 5L, arg = "data")
+    numeric_data <- cc$data
+    diagnostics_extra <- cc$diagnostics
+  }
   colnames_data <- colnames(numeric_data)
 
   method_int <- switch(method, pearson = 0L, spearman = 1L)
   use_mad <- identical(outlier_rule, "mad")
-  prev_threads <- get_omp_threads()
-  on.exit(set_omp_threads(as.integer(prev_threads)), add = TRUE)
+  prev_threads <- .mc_prepare_omp_threads(
+    n_threads
+  )
+  if (!is.null(prev_threads)) {
+    on.exit(.mc_exit_omp_threads(prev_threads), add = TRUE)
+  }
   res <- skipcor_matrix_cpp(
     numeric_data,
     method_int = method_int,
@@ -304,7 +337,7 @@ skipped_corr <- function(data,
     min_n = 5L,
     n_threads = n_threads,
     return_masks = return_masks,
-    return_inference = isTRUE(ci) || isTRUE(p_value),
+    return_inference = do_inference,
     conf_level = conf_level,
     n_boot = n_boot,
     seed = if (is.null(seed)) sample.int(.Machine$integer.max, 1L) else seed,
@@ -337,6 +370,7 @@ skipped_corr <- function(data,
   for (nm in names(diag_payload)) {
     diag_payload[[nm]] <- .mc_set_matrix_dimnames(diag_payload[[nm]], colnames_data)
   }
+  diag_payload <- .mc_merge_diagnostics(diag_payload, diagnostics_extra)
 
   infer_payload <- NULL
   if (isTRUE(ci) || isTRUE(p_value)) {
@@ -429,6 +463,7 @@ skipped_corr <- function(data,
       "; standardise = ", stand,
       "; NA mode = ", na_method, "."
     ),
+    symmetric = TRUE,
     diagnostics = diag_payload,
     extra_attrs = c(
       if (isTRUE(return_masks)) list(skipped_masks = mask_payload),
@@ -436,7 +471,7 @@ skipped_corr <- function(data,
       if (!is.null(inference_attr)) list(inference = inference_attr)
     )
   )
-  .mc_finalize_corr_output(
+  .mc_finalize_corr_output_fast(
     out,
     output = output_cfg$output,
     threshold = output_cfg$threshold,
@@ -719,68 +754,51 @@ plot.skipped_corr <- function(x,
   show_p <- match.arg(show_p)
   check_inherits(object, "skipped_corr")
 
-  est <- as.matrix(object)
-  rn <- rownames(est); cn <- colnames(est)
-  if (is.null(rn)) rn <- as.character(seq_len(nrow(est)))
-  if (is.null(cn)) cn <- as.character(seq_len(ncol(est)))
-
   ci <- .mc_skipcor_ci_attr(object)
   inf <- .mc_skipcor_inference_attr(object)
   diag_attr <- attr(object, "diagnostics", exact = TRUE)
 
-  include_ci <- identical(show_ci, "yes") && !is.null(ci)
   include_p <- switch(show_p, auto = !is.null(inf) && !is.null(inf$p_value), yes = TRUE, no = FALSE)
 
-  rows <- vector("list", nrow(est) * (ncol(est) - 1L) / 2L)
-  k <- 0L
-  for (i in seq_len(nrow(est) - 1L)) {
-    for (j in (i + 1L):ncol(est)) {
-      k <- k + 1L
-      rec <- list(
-        var1 = rn[i],
-        var2 = cn[j],
-        estimate = round(est[i, j], digits)
-      )
-      if (include_ci) {
-        rec$lwr <- if (!is.null(ci$lwr.ci) && is.finite(ci$lwr.ci[i, j])) round(ci$lwr.ci[i, j], ci_digits) else NA_real_
-        rec$upr <- if (!is.null(ci$upr.ci) && is.finite(ci$upr.ci[i, j])) round(ci$upr.ci[i, j], ci_digits) else NA_real_
-      }
-      if (include_p) {
-        rec$p_value <- if (!is.null(inf$p_value) && is.finite(inf$p_value[i, j])) round(inf$p_value[i, j], p_digits) else NA_real_
-        if (!is.null(inf$p_value_adjusted)) {
-          rec$p_value_adjusted <- if (is.finite(inf$p_value_adjusted[i, j])) round(inf$p_value_adjusted[i, j], p_digits) else NA_real_
-        }
-        if (!is.null(inf$reject)) rec$reject <- isTRUE(inf$reject[i, j])
-      }
-      if (is.list(diag_attr)) {
-        if (is.matrix(diag_attr$skipped_n)) rec$skipped_n <- as.integer(diag_attr$skipped_n[i, j])
-        if (is.matrix(diag_attr$skipped_prop)) rec$skipped_prop <- round(diag_attr$skipped_prop[i, j], p_digits)
-        if (is.matrix(diag_attr$n_complete)) rec$n_complete <- as.integer(diag_attr$n_complete[i, j])
-      }
-      rows[[k]] <- rec
+  base <- .mc_summary_corr_matrix(object)
+  extra_columns <- list()
+  if (isTRUE(include_p)) {
+    extra_columns$p_value <- list(matrix = if (is.null(inf)) NULL else inf$p_value, digits = p_digits)
+    if (!is.null(inf$p_value_adjusted)) {
+      extra_columns$p_value_adjusted <- list(matrix = inf$p_value_adjusted, digits = p_digits)
+    }
+    if (!is.null(inf$reject)) {
+      extra_columns$reject <- list(matrix = inf$reject, type = "logical")
+    }
+  }
+  if (is.list(diag_attr)) {
+    if (is.matrix(diag_attr$skipped_n)) {
+      extra_columns$skipped_n <- list(matrix = diag_attr$skipped_n, type = "integer")
+    }
+    if (is.matrix(diag_attr$skipped_prop)) {
+      extra_columns$skipped_prop <- list(matrix = diag_attr$skipped_prop, digits = p_digits)
     }
   }
 
-  df <- do.call(rbind.data.frame, rows)
-  rownames(df) <- NULL
-  num_cols <- intersect(c("estimate", "lwr", "upr", "p_value", "p_value_adjusted", "skipped_prop"), names(df))
-  int_cols <- intersect(c("skipped_n", "n_complete"), names(df))
-  for (nm in num_cols) df[[nm]] <- as.numeric(df[[nm]])
-  for (nm in int_cols) df[[nm]] <- as.integer(df[[nm]])
-
-  base <- .mc_summary_corr_matrix(object)
-  out <- .mc_finalize_summary_df(df, class_name = "summary.skipped_corr")
-  attr(out, "overview") <- base
-  attr(out, "has_ci") <- include_ci
-  attr(out, "has_p") <- include_p
-  attr(out, "conf.level") <- if (is.null(ci)) NA_real_ else ci$conf.level
-  attr(out, "digits") <- digits
-  attr(out, "ci_digits") <- ci_digits
-  attr(out, "p_digits") <- p_digits
-  attr(out, "inference_method") <- if (is.null(inf)) NA_character_ else inf$method
-  attr(out, "p_adjust") <- if (is.null(inf) || is.null(inf$p_adjust)) "none" else inf$p_adjust
-  attr(out, "critical_p_value") <- if (is.null(inf)) NA_real_ else inf$critical_p_value %||% NA_real_
-  out
+  .mc_pairwise_matrix_summary(
+    object,
+    class_name = "summary.skipped_corr",
+    digits = digits,
+    ci_digits = ci_digits,
+    p_digits = p_digits,
+    show_ci = show_ci,
+    ci_attr = ci,
+    inference_attr = inf,
+    diagnostics_attr = diag_attr,
+    include_p = include_p,
+    extra_columns = extra_columns,
+    extra_attrs = list(
+      inference_method = if (is.null(inf)) NA_character_ else inf$method,
+      p_adjust = if (is.null(inf) || is.null(inf$p_adjust)) "none" else inf$p_adjust,
+      critical_p_value = if (is.null(inf)) NA_real_ else inf$critical_p_value %||% NA_real_
+    ),
+    overview = base
+  )
 }
 
 #' @rdname skipped_corr
@@ -842,4 +860,5 @@ print.summary.skipped_corr <- function(x, digits = NULL, n = NULL,
   )
   invisible(x)
 }
+
 

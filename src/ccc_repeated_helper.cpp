@@ -29,11 +29,16 @@ Rcpp::List build_L_Dm_cpp(
     bool has_interaction,
     Rcpp::Nullable<Rcpp::NumericMatrix> Dmat_global
 ) {
-  const bool have_met  = rmet_name.isNotNull()  && method_levels.size() >= 1;
-  const bool have_time = rtime_name.isNotNull() && time_levels.size()  >= 1;
+  Rcpp::CharacterVector rmet_vec =
+    rmet_name.isNotNull() ? Rcpp::as<Rcpp::CharacterVector>(rmet_name) : Rcpp::CharacterVector();
+  Rcpp::CharacterVector rtime_vec =
+    rtime_name.isNotNull() ? Rcpp::as<Rcpp::CharacterVector>(rtime_name) : Rcpp::CharacterVector();
 
-  const std::string rmet  = have_met  ? as<std::string>(as<CharacterVector>(rmet_name)[0])  : std::string();
-  const std::string rtime = have_time ? as<std::string>(as<CharacterVector>(rtime_name)[0]) : std::string();
+  const bool have_met  = rmet_vec.size()  > 0 && method_levels.size() >= 1;
+  const bool have_time = rtime_vec.size() > 0 && time_levels.size()  >= 1;
+
+  const std::string rmet  = have_met  ? as<std::string>(rmet_vec[0])  : std::string();
+  const std::string rtime = have_time ? as<std::string>(rtime_vec[0]) : std::string();
 
   const int nm = have_met  ? (int)method_levels.size() : 0;
   const int nt = have_time ? (int)time_levels.size()   : 0;
@@ -65,6 +70,13 @@ Rcpp::List build_L_Dm_cpp(
       NumericMatrix Dg(Dmat_global);
       if ((int)Dg.nrow() != nt_eff || (int)Dg.ncol() != nt_eff)
         stop("Dmat_global must be %d x %d for the provided time levels.", nt_eff, nt_eff);
+      for (int i = 0; i < Dg.nrow(); ++i) {
+        for (int j = 0; j < Dg.ncol(); ++j) {
+          if (!R_finite(Dg(i, j))) {
+            stop("Dmat_global must contain only finite values.");
+          }
+        }
+      }
       mat D(&Dg[0], Dg.nrow(), Dg.ncol(), false);
       // soft symmetrize for safety; R already normalizes/psd-guards
       D = 0.5 * (D + D.t());
@@ -245,7 +257,12 @@ Rcpp::List build_L_Dm_Z_cpp(
     NumericVector z = as<NumericVector>(slope_var);
     if ((int)z.size() != n) stop("slope_var length mismatch.");
     Z = NumericMatrix(n, 1);
-    for (int i = 0; i < n; ++i) Z(i,0) = (NumericVector::is_na(z[i]) ? 0.0 : (double)z[i]);
+    for (int i = 0; i < n; ++i) {
+      if (NumericVector::is_na(z[i]) || !R_finite(z[i])) {
+        stop("slope_var must contain only finite non-missing values.");
+      }
+      Z(i,0) = static_cast<double>(z[i]);
+    }
 
   } else if (slope_mode == "method") {
     if (!slope_var.isNotNull())   stop("slope_var is required for slope_mode='method'.");
@@ -261,9 +278,17 @@ Rcpp::List build_L_Dm_Z_cpp(
 
     Z = NumericMatrix(n, Lm);
     for (int i = 0; i < n; ++i) {
-      const double zi = NumericVector::is_na(z[i]) ? 0.0 : (double)z[i];
-      const int mc = (met[i] == NA_INTEGER ? 0 : (int)met[i]); // 1..Lm
-      if (mc >= 1 && mc <= Lm) Z(i, mc-1) = zi;
+      if (NumericVector::is_na(z[i]) || !R_finite(z[i])) {
+        stop("slope_var must contain only finite non-missing values.");
+      }
+      if (met[i] == NA_INTEGER) {
+        stop("method_codes must not contain missing values.");
+      }
+      const int mc = static_cast<int>(met[i]); // 1..Lm
+      if (mc < 1 || mc > Lm) {
+        stop("method_codes must contain only values in 1..%d.", Lm);
+      }
+      Z(i, mc-1) = static_cast<double>(z[i]);
     }
     if (drop_zero_cols) Z = drop_zero_columns(Z);
   } else {

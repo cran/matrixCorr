@@ -390,27 +390,18 @@ alone.</p>
 <span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt; Correlation summary</span></span>
 <span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
 <span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
-<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 10</span></span>
+<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 6</span></span>
 <span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
 <span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
-<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0023 to 1.0000</span></span>
+<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0023 to 0.7766</span></span>
 <span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate fisher_z</span></span>
-<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7766   1.0368  </span></span>
-<span id="cb2-27"><a href="#cb2-27" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1866   0.1888  </span></span>
-<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.1750   0.1768  </span></span>
-<span id="cb2-29"><a href="#cb2-29" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1318   0.1326  </span></span>
-<span id="cb2-30"><a href="#cb2-30" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.1047   0.1051  </span></span>
-<span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0023  -0.0023 </span></span>
-<span id="cb2-32"><a href="#cb2-32" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb2-33"><a href="#cb2-33" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
-<span id="cb2-34"><a href="#cb2-34" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb2-35"><a href="#cb2-35" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate  fisher_z </span></span>
-<span id="cb2-36"><a href="#cb2-36" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7766292 1.0368199</span></span>
-<span id="cb2-37"><a href="#cb2-37" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1866151 0.1888278</span></span>
-<span id="cb2-38"><a href="#cb2-38" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.1750117 0.1768321</span></span>
-<span id="cb2-39"><a href="#cb2-39" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1318097 0.1325811</span></span>
-<span id="cb2-40"><a href="#cb2-40" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.1046882 0.1050732</span></span></code></pre></div>
+<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate</span></span>
+<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt;  x1    x2     0.7766 </span></span>
+<span id="cb2-27"><a href="#cb2-27" tabindex="-1"></a><span class="co">#&gt;  x2    x3     0.1866 </span></span>
+<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a><span class="co">#&gt;  x3    x4     0.1750 </span></span>
+<span id="cb2-29"><a href="#cb2-29" tabindex="-1"></a><span class="co">#&gt;  x1    x3     0.1318 </span></span>
+<span id="cb2-30"><a href="#cb2-30" tabindex="-1"></a><span class="co">#&gt;  x1    x4     0.1047 </span></span>
+<span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0023</span></span></code></pre></div>
 <p>This toy dataset is intentionally structured so that <code>x1</code>
 and <code>x2</code> form a clear linear pair, <code>x3</code> is only
 moderately related to that first block, and <code>x4</code> is close to
@@ -432,37 +423,68 @@ directly.</p>
 <span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">#&gt; Pearson correlation summary</span></span>
 <span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
 <span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
-<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 10</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 6</span></span>
 <span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
 <span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
-<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0239 to 1.0000</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0239 to 0.7773</span></span>
 <span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt;   ci          : 95%</span></span>
 <span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt;   ci_method   : fisher_z</span></span>
 <span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt;   ci_width    : 0.179 to 0.439</span></span>
 <span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt;   cross_zero  : 4 pair(s)</span></span>
 <span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n_complete lwr     upr    fisher_z statistic p_value</span></span>
-<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7773   80         0.6724  0.8516 1.0385   9.1128    0.0000 </span></span>
-<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.2249   80         0.0054  0.4236 0.2288   2.0074    0.0447 </span></span>
-<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1741   80         -0.0474 0.3793 0.1759   1.5437    0.1227 </span></span>
-<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1250   80         -0.0974 0.3355 0.1257   1.1029    0.2701 </span></span>
-<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.0770   80         -0.1452 0.2918 0.0772   0.6771    0.4984 </span></span>
-<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0239  80         -0.2424 0.1968 -0.0239  -0.2100   0.8337 </span></span>
-<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
-<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate  n_complete lwr          upr       fisher_z   statistic</span></span>
-<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7772944 80          0.672415903 0.8515753 1.03849848 9.1127871</span></span>
-<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.2248536 80          0.005403655 0.4236409 0.22876233 2.0073813</span></span>
-<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1741272 80         -0.047403236 0.3793314 0.17591984 1.5436903</span></span>
-<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1250327 80         -0.097358788 0.3355320 0.12569046 1.1029293</span></span>
-<span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.0770052 80         -0.145167838 0.2917853 0.07715795 0.6770583</span></span>
-<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt;  p_value     </span></span>
-<span id="cb4-32"><a href="#cb4-32" tabindex="-1"></a><span class="co">#&gt;  8.029223e-20</span></span>
-<span id="cb4-33"><a href="#cb4-33" tabindex="-1"></a><span class="co">#&gt;  4.470908e-02</span></span>
-<span id="cb4-34"><a href="#cb4-34" tabindex="-1"></a><span class="co">#&gt;  1.226634e-01</span></span>
-<span id="cb4-35"><a href="#cb4-35" tabindex="-1"></a><span class="co">#&gt;  2.700579e-01</span></span>
-<span id="cb4-36"><a href="#cb4-36" tabindex="-1"></a><span class="co">#&gt;  4.983690e-01</span></span></code></pre></div>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n  95% CI            p_value</span></span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a><span class="co">#&gt;  x1    x2     0.7773  80 [0.6724, 0.8516]  0.0000 </span></span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a><span class="co">#&gt;  x3    x4     0.2249  80 [0.0054, 0.4236]  0.0447 </span></span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="co">#&gt;  x2    x3     0.1741  80 [-0.0474, 0.3793] 0.1227 </span></span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="co">#&gt;  x1    x3     0.1250  80 [-0.0974, 0.3355] 0.2701 </span></span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt;  x1    x4     0.0770  80 [-0.1452, 0.2918] 0.4984 </span></span>
+<span id="cb4-21"><a href="#cb4-21" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0239  80 [-0.2424, 0.1968] 0.8337</span></span>
+<span id="cb4-22"><a href="#cb4-22" tabindex="-1"></a><span class="fu">estimate</span>(R_pear_ci)</span>
+<span id="cb4-23"><a href="#cb4-23" tabindex="-1"></a><span class="co">#&gt;           x1          x2        x3          x4</span></span>
+<span id="cb4-24"><a href="#cb4-24" tabindex="-1"></a><span class="co">#&gt; x1 1.0000000  0.77729444 0.1250327  0.07700520</span></span>
+<span id="cb4-25"><a href="#cb4-25" tabindex="-1"></a><span class="co">#&gt; x2 0.7772944  1.00000000 0.1741272 -0.02392893</span></span>
+<span id="cb4-26"><a href="#cb4-26" tabindex="-1"></a><span class="co">#&gt; x3 0.1250327  0.17412725 1.0000000  0.22485359</span></span>
+<span id="cb4-27"><a href="#cb4-27" tabindex="-1"></a><span class="co">#&gt; x4 0.0770052 -0.02392893 0.2248536  1.00000000</span></span>
+<span id="cb4-28"><a href="#cb4-28" tabindex="-1"></a><span class="fu">confint</span>(R_pear_ci)</span>
+<span id="cb4-29"><a href="#cb4-29" tabindex="-1"></a><span class="co">#&gt;   item1 item2          lwr       upr</span></span>
+<span id="cb4-30"><a href="#cb4-30" tabindex="-1"></a><span class="co">#&gt; 1    x1    x2  0.672415903 0.8515753</span></span>
+<span id="cb4-31"><a href="#cb4-31" tabindex="-1"></a><span class="co">#&gt; 2    x1    x3 -0.097358788 0.3355320</span></span>
+<span id="cb4-32"><a href="#cb4-32" tabindex="-1"></a><span class="co">#&gt; 3    x2    x3 -0.047403236 0.3793314</span></span>
+<span id="cb4-33"><a href="#cb4-33" tabindex="-1"></a><span class="co">#&gt; 4    x1    x4 -0.145167838 0.2917853</span></span>
+<span id="cb4-34"><a href="#cb4-34" tabindex="-1"></a><span class="co">#&gt; 5    x2    x4 -0.242371535 0.1968228</span></span>
+<span id="cb4-35"><a href="#cb4-35" tabindex="-1"></a><span class="co">#&gt; 6    x3    x4  0.005403655 0.4236409</span></span>
+<span id="cb4-36"><a href="#cb4-36" tabindex="-1"></a><span class="fu">ci</span>(R_pear_ci)</span>
+<span id="cb4-37"><a href="#cb4-37" tabindex="-1"></a><span class="co">#&gt; $est</span></span>
+<span id="cb4-38"><a href="#cb4-38" tabindex="-1"></a><span class="co">#&gt;           x1          x2        x3          x4</span></span>
+<span id="cb4-39"><a href="#cb4-39" tabindex="-1"></a><span class="co">#&gt; x1 1.0000000  0.77729444 0.1250327  0.07700520</span></span>
+<span id="cb4-40"><a href="#cb4-40" tabindex="-1"></a><span class="co">#&gt; x2 0.7772944  1.00000000 0.1741272 -0.02392893</span></span>
+<span id="cb4-41"><a href="#cb4-41" tabindex="-1"></a><span class="co">#&gt; x3 0.1250327  0.17412725 1.0000000  0.22485359</span></span>
+<span id="cb4-42"><a href="#cb4-42" tabindex="-1"></a><span class="co">#&gt; x4 0.0770052 -0.02392893 0.2248536  1.00000000</span></span>
+<span id="cb4-43"><a href="#cb4-43" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-44"><a href="#cb4-44" tabindex="-1"></a><span class="co">#&gt; $lwr.ci</span></span>
+<span id="cb4-45"><a href="#cb4-45" tabindex="-1"></a><span class="co">#&gt;             x1          x2           x3           x4</span></span>
+<span id="cb4-46"><a href="#cb4-46" tabindex="-1"></a><span class="co">#&gt; x1         NaN  0.67241590 -0.097358788 -0.145167838</span></span>
+<span id="cb4-47"><a href="#cb4-47" tabindex="-1"></a><span class="co">#&gt; x2  0.67241590         NaN -0.047403236 -0.242371535</span></span>
+<span id="cb4-48"><a href="#cb4-48" tabindex="-1"></a><span class="co">#&gt; x3 -0.09735879 -0.04740324          NaN  0.005403655</span></span>
+<span id="cb4-49"><a href="#cb4-49" tabindex="-1"></a><span class="co">#&gt; x4 -0.14516784 -0.24237154  0.005403655          NaN</span></span>
+<span id="cb4-50"><a href="#cb4-50" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-51"><a href="#cb4-51" tabindex="-1"></a><span class="co">#&gt; $upr.ci</span></span>
+<span id="cb4-52"><a href="#cb4-52" tabindex="-1"></a><span class="co">#&gt;           x1        x2        x3        x4</span></span>
+<span id="cb4-53"><a href="#cb4-53" tabindex="-1"></a><span class="co">#&gt; x1       NaN 0.8515753 0.3355320 0.2917853</span></span>
+<span id="cb4-54"><a href="#cb4-54" tabindex="-1"></a><span class="co">#&gt; x2 0.8515753       NaN 0.3793314 0.1968228</span></span>
+<span id="cb4-55"><a href="#cb4-55" tabindex="-1"></a><span class="co">#&gt; x3 0.3355320 0.3793314       NaN 0.4236409</span></span>
+<span id="cb4-56"><a href="#cb4-56" tabindex="-1"></a><span class="co">#&gt; x4 0.2917853 0.1968228 0.4236409       NaN</span></span>
+<span id="cb4-57"><a href="#cb4-57" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-58"><a href="#cb4-58" tabindex="-1"></a><span class="co">#&gt; $conf.level</span></span>
+<span id="cb4-59"><a href="#cb4-59" tabindex="-1"></a><span class="co">#&gt; [1] 0.95</span></span>
+<span id="cb4-60"><a href="#cb4-60" tabindex="-1"></a><span class="fu">tidy</span>(R_pear_ci)</span>
+<span id="cb4-61"><a href="#cb4-61" tabindex="-1"></a><span class="co">#&gt;   item1 item2    estimate          lwr       upr</span></span>
+<span id="cb4-62"><a href="#cb4-62" tabindex="-1"></a><span class="co">#&gt; 1    x1    x2  0.77729444  0.672415903 0.8515753</span></span>
+<span id="cb4-63"><a href="#cb4-63" tabindex="-1"></a><span class="co">#&gt; 2    x1    x3  0.12503273 -0.097358788 0.3355320</span></span>
+<span id="cb4-64"><a href="#cb4-64" tabindex="-1"></a><span class="co">#&gt; 3    x2    x3  0.17412725 -0.047403236 0.3793314</span></span>
+<span id="cb4-65"><a href="#cb4-65" tabindex="-1"></a><span class="co">#&gt; 4    x1    x4  0.07700520 -0.145167838 0.2917853</span></span>
+<span id="cb4-66"><a href="#cb4-66" tabindex="-1"></a><span class="co">#&gt; 5    x2    x4 -0.02392893 -0.242371535 0.1968228</span></span>
+<span id="cb4-67"><a href="#cb4-67" tabindex="-1"></a><span class="co">#&gt; 6    x3    x4  0.22485359  0.005403655 0.4236409</span></span></code></pre></div>
 </div>
 <div id="spearman-and-kendall" class="section level2">
 <h2>Spearman and Kendall</h2>
@@ -511,72 +533,42 @@ is kept.</p>
 <span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt; Spearman correlation summary</span></span>
 <span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
 <span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
-<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 10</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 6</span></span>
 <span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
 <span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
-<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0023 to 1.0000</span></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0023 to 0.7766</span></span>
 <span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co">#&gt;   ci          : 95%</span></span>
 <span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt;   ci_method   : jackknife_euclidean_likelihood</span></span>
 <span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt;   ci_width    : 0.197 to 0.476</span></span>
 <span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="co">#&gt;   cross_zero  : 5 pair(s)</span></span>
 <span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n_complete lwr     upr    fisher_z statistic p_value</span></span>
-<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7766   80         0.6776  0.8750 1.0368   9.0981    0.0000 </span></span>
-<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1866   80         -0.0400 0.4130 0.1888   1.6570    0.0975 </span></span>
-<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.1750   80         -0.0525 0.4023 0.1768   1.5517    0.1207 </span></span>
-<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1318   80         -0.0975 0.3609 0.1326   1.1634    0.2447 </span></span>
-<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.1047   80         -0.1335 0.3427 0.1051   0.9220    0.3565 </span></span>
-<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0023  80         -0.2312 0.2267 -0.0023  -0.0200   0.9841 </span></span>
-<span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb6-25"><a href="#cb6-25" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
-<span id="cb6-26"><a href="#cb6-26" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb6-27"><a href="#cb6-27" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate  n_complete lwr         upr       fisher_z  statistic</span></span>
-<span id="cb6-28"><a href="#cb6-28" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.7766292 80          0.67755395 0.8749743 1.0368199 9.0980576</span></span>
-<span id="cb6-29"><a href="#cb6-29" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1866151 80         -0.04003742 0.4129867 0.1888278 1.6569574</span></span>
-<span id="cb6-30"><a href="#cb6-30" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.1750117 80         -0.05247634 0.4022706 0.1768321 1.5516955</span></span>
-<span id="cb6-31"><a href="#cb6-31" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.1318097 80         -0.09748395 0.3609353 0.1325811 1.1633941</span></span>
-<span id="cb6-32"><a href="#cb6-32" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.1046882 80         -0.13348567 0.3427447 0.1050732 0.9220137</span></span>
-<span id="cb6-33"><a href="#cb6-33" tabindex="-1"></a><span class="co">#&gt;  p_value     </span></span>
-<span id="cb6-34"><a href="#cb6-34" tabindex="-1"></a><span class="co">#&gt;  9.196175e-20</span></span>
-<span id="cb6-35"><a href="#cb6-35" tabindex="-1"></a><span class="co">#&gt;  9.752809e-02</span></span>
-<span id="cb6-36"><a href="#cb6-36" tabindex="-1"></a><span class="co">#&gt;  1.207351e-01</span></span>
-<span id="cb6-37"><a href="#cb6-37" tabindex="-1"></a><span class="co">#&gt;  2.446697e-01</span></span>
-<span id="cb6-38"><a href="#cb6-38" tabindex="-1"></a><span class="co">#&gt;  3.565214e-01</span></span>
-<span id="cb6-39"><a href="#cb6-39" tabindex="-1"></a><span class="fu">summary</span>(fit_ken_ci)</span>
-<span id="cb6-40"><a href="#cb6-40" tabindex="-1"></a><span class="co">#&gt; Kendall correlation summary</span></span>
-<span id="cb6-41"><a href="#cb6-41" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
-<span id="cb6-42"><a href="#cb6-42" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
-<span id="cb6-43"><a href="#cb6-43" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 10</span></span>
-<span id="cb6-44"><a href="#cb6-44" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
-<span id="cb6-45"><a href="#cb6-45" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
-<span id="cb6-46"><a href="#cb6-46" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0032 to 1.0000</span></span>
-<span id="cb6-47"><a href="#cb6-47" tabindex="-1"></a><span class="co">#&gt;   ci          : 95%</span></span>
-<span id="cb6-48"><a href="#cb6-48" tabindex="-1"></a><span class="co">#&gt;   ci_method   : fieller</span></span>
-<span id="cb6-49"><a href="#cb6-49" tabindex="-1"></a><span class="co">#&gt;   ci_width    : 0.195 to 0.295</span></span>
-<span id="cb6-50"><a href="#cb6-50" tabindex="-1"></a><span class="co">#&gt;   cross_zero  : 5 pair(s)</span></span>
-<span id="cb6-51"><a href="#cb6-51" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb6-52"><a href="#cb6-52" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n_complete lwr     upr    fisher_z statistic p_value</span></span>
-<span id="cb6-53"><a href="#cb6-53" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.5861   80         0.4800  0.6752 0.6717   5.8939    0.0000 </span></span>
-<span id="cb6-54"><a href="#cb6-54" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.1152   80         -0.0329 0.2583 0.1157   1.0153    0.3100 </span></span>
-<span id="cb6-55"><a href="#cb6-55" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.1133   80         -0.0348 0.2565 0.1138   0.9984    0.3181 </span></span>
-<span id="cb6-56"><a href="#cb6-56" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.0880   80         -0.0603 0.2325 0.0882   0.7740    0.4389 </span></span>
-<span id="cb6-57"><a href="#cb6-57" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.0741   80         -0.0743 0.2192 0.0742   0.6510    0.5151 </span></span>
-<span id="cb6-58"><a href="#cb6-58" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0032  80         -0.1506 0.1444 -0.0032  -0.0278   0.9778 </span></span>
-<span id="cb6-59"><a href="#cb6-59" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb6-60"><a href="#cb6-60" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
-<span id="cb6-61"><a href="#cb6-61" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb6-62"><a href="#cb6-62" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate   n_complete lwr         upr       fisher_z   statistic</span></span>
-<span id="cb6-63"><a href="#cb6-63" tabindex="-1"></a><span class="co">#&gt;  x1    x2    0.58607595 80          0.48004770 0.6752274 0.67166789 5.8938618</span></span>
-<span id="cb6-64"><a href="#cb6-64" tabindex="-1"></a><span class="co">#&gt;  x3    x4    0.11518987 80         -0.03290630 0.2583364 0.11570344 1.0152936</span></span>
-<span id="cb6-65"><a href="#cb6-65" tabindex="-1"></a><span class="co">#&gt;  x2    x3    0.11329114 80         -0.03482794 0.2565401 0.11377960 0.9984119</span></span>
-<span id="cb6-66"><a href="#cb6-66" tabindex="-1"></a><span class="co">#&gt;  x1    x3    0.08797468 80         -0.06034551 0.2324940 0.08820270 0.7739756</span></span>
-<span id="cb6-67"><a href="#cb6-67" tabindex="-1"></a><span class="co">#&gt;  x1    x4    0.07405063 80         -0.07429803 0.2191928 0.07418643 0.6509833</span></span>
-<span id="cb6-68"><a href="#cb6-68" tabindex="-1"></a><span class="co">#&gt;  p_value     </span></span>
-<span id="cb6-69"><a href="#cb6-69" tabindex="-1"></a><span class="co">#&gt;  3.772727e-09</span></span>
-<span id="cb6-70"><a href="#cb6-70" tabindex="-1"></a><span class="co">#&gt;  3.099659e-01</span></span>
-<span id="cb6-71"><a href="#cb6-71" tabindex="-1"></a><span class="co">#&gt;  3.180797e-01</span></span>
-<span id="cb6-72"><a href="#cb6-72" tabindex="-1"></a><span class="co">#&gt;  4.389452e-01</span></span>
-<span id="cb6-73"><a href="#cb6-73" tabindex="-1"></a><span class="co">#&gt;  5.150573e-01</span></span></code></pre></div>
+<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n  95% CI            p_value</span></span>
+<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a><span class="co">#&gt;  x1    x2     0.7766  80 [0.6776, 0.8750]  0.0000 </span></span>
+<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a><span class="co">#&gt;  x2    x3     0.1866  80 [-0.0400, 0.4130] 0.0975 </span></span>
+<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a><span class="co">#&gt;  x3    x4     0.1750  80 [-0.0525, 0.4023] 0.1207 </span></span>
+<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a><span class="co">#&gt;  x1    x3     0.1318  80 [-0.0975, 0.3609] 0.2447 </span></span>
+<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a><span class="co">#&gt;  x1    x4     0.1047  80 [-0.1335, 0.3427] 0.3565 </span></span>
+<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0023  80 [-0.2312, 0.2267] 0.9841</span></span>
+<span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a><span class="fu">summary</span>(fit_ken_ci)</span>
+<span id="cb6-25"><a href="#cb6-25" tabindex="-1"></a><span class="co">#&gt; Kendall correlation summary</span></span>
+<span id="cb6-26"><a href="#cb6-26" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
+<span id="cb6-27"><a href="#cb6-27" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
+<span id="cb6-28"><a href="#cb6-28" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 6</span></span>
+<span id="cb6-29"><a href="#cb6-29" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
+<span id="cb6-30"><a href="#cb6-30" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
+<span id="cb6-31"><a href="#cb6-31" tabindex="-1"></a><span class="co">#&gt;   estimate    : -0.0032 to 0.5861</span></span>
+<span id="cb6-32"><a href="#cb6-32" tabindex="-1"></a><span class="co">#&gt;   ci          : 95%</span></span>
+<span id="cb6-33"><a href="#cb6-33" tabindex="-1"></a><span class="co">#&gt;   ci_method   : fieller</span></span>
+<span id="cb6-34"><a href="#cb6-34" tabindex="-1"></a><span class="co">#&gt;   ci_width    : 0.195 to 0.295</span></span>
+<span id="cb6-35"><a href="#cb6-35" tabindex="-1"></a><span class="co">#&gt;   cross_zero  : 5 pair(s)</span></span>
+<span id="cb6-36"><a href="#cb6-36" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-37"><a href="#cb6-37" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n  95% CI            p_value</span></span>
+<span id="cb6-38"><a href="#cb6-38" tabindex="-1"></a><span class="co">#&gt;  x1    x2     0.5861  80 [0.4800, 0.6752]  0.0000 </span></span>
+<span id="cb6-39"><a href="#cb6-39" tabindex="-1"></a><span class="co">#&gt;  x3    x4     0.1152  80 [-0.0329, 0.2583] 0.3100 </span></span>
+<span id="cb6-40"><a href="#cb6-40" tabindex="-1"></a><span class="co">#&gt;  x2    x3     0.1133  80 [-0.0348, 0.2565] 0.3181 </span></span>
+<span id="cb6-41"><a href="#cb6-41" tabindex="-1"></a><span class="co">#&gt;  x1    x3     0.0880  80 [-0.0603, 0.2325] 0.4389 </span></span>
+<span id="cb6-42"><a href="#cb6-42" tabindex="-1"></a><span class="co">#&gt;  x1    x4     0.0741  80 [-0.0743, 0.2192] 0.5151 </span></span>
+<span id="cb6-43"><a href="#cb6-43" tabindex="-1"></a><span class="co">#&gt;  x2    x4    -0.0032  80 [-0.1506, 0.1444] 0.9778</span></span></code></pre></div>
 </div>
 <div id="distance-correlation" class="section level2">
 <h2>Distance correlation</h2>
@@ -614,19 +606,14 @@ directly.</p>
 <span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="co">#&gt; Distance correlation summary</span></span>
 <span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co">#&gt;   output      : matrix</span></span>
 <span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 2 x 2</span></span>
-<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 3</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt;   retained_pairs: 1</span></span>
 <span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt;   threshold   : 0.0000</span></span>
 <span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co">#&gt;   diag        : included</span></span>
-<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt;   estimate    : 0.2064 to 1.0000</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt;   estimate    : 0.2064</span></span>
 <span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="co">#&gt;   inference   : dcor_t_test</span></span>
 <span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n_complete statistic df        p_value fisher_z</span></span>
-<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co">#&gt;  x     y     0.2064   100        14.6861   4849.0000 0.0000  0.2094  </span></span>
-<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a><span class="co">#&gt; Strongest pairs by |estimate|</span></span>
-<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate  n_complete statistic df   p_value      fisher_z </span></span>
-<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a><span class="co">#&gt;  x     y     0.2063619 100        14.68607  4849 4.156224e-48 0.2093684</span></span></code></pre></div>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt;  item1 item2 estimate n   p_value</span></span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co">#&gt;  x     y     0.2064   100 0.0000</span></span></code></pre></div>
 </div>
 <div id="missing-values" class="section level2">
 <h2>Missing values</h2>
@@ -637,17 +624,18 @@ through <code>na_method = &quot;pairwise&quot;</code>.</p>
 <span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>X_miss<span class="sc">$</span>x2[<span class="fu">c</span>(<span class="dv">3</span>, <span class="dv">7</span>)] <span class="ot">&lt;-</span> <span class="cn">NA</span></span>
 <span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a></span>
 <span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">pearson_corr</span>(X_miss))</span>
-<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="co">#&gt; Error in eval(expr, envir) : Missing values are not allowed.</span></span>
-<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="fu">pearson_corr</span>(X_miss, <span class="at">na_method =</span> <span class="st">&quot;pairwise&quot;</span>)</span>
-<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="co">#&gt; Pearson correlation matrix</span></span>
-<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co">#&gt;   method      : pearson</span></span>
-<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
-<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co">#&gt;        x1      x2     x3      x4</span></span>
-<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="co">#&gt; x1 1.0000  0.7742 0.1250  0.0770</span></span>
-<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a><span class="co">#&gt; x2 0.7742  1.0000 0.1829 -0.0285</span></span>
-<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="co">#&gt; x3 0.1250  0.1829 1.0000  0.2249</span></span>
-<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a><span class="co">#&gt; x4 0.0770 -0.0285 0.2249  1.0000</span></span></code></pre></div>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="co">#&gt; Error in eval(expr, envir) : </span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="co">#&gt;   Missing values are not allowed when na_method = &quot;error&quot;; non-finite values are not allowed either. Use na_method = &quot;pairwise&quot; to use pairwise complete observations, or na_method = &quot;complete&quot; to drop rows with missing or non-finite values before computing correlations.</span></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="fu">pearson_corr</span>(X_miss, <span class="at">na_method =</span> <span class="st">&quot;pairwise&quot;</span>)</span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co">#&gt; Pearson correlation matrix</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="co">#&gt;   method      : pearson</span></span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a><span class="co">#&gt;   dimensions  : 4 x 4</span></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="co">#&gt;        x1      x2     x3      x4</span></span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a><span class="co">#&gt; x1 1.0000  0.7742 0.1250  0.0770</span></span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="co">#&gt; x2 0.7742  1.0000 0.1829 -0.0285</span></span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a><span class="co">#&gt; x3 0.1250  0.1829 1.0000  0.2249</span></span>
+<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a><span class="co">#&gt; x4 0.0770 -0.0285 0.2249  1.0000</span></span></code></pre></div>
 <p>When <code>na_method = &quot;pairwise&quot;</code>, the package uses pairwise
 complete observations for the affected estimator. That is convenient,
 but it also means different pairs may be based on different effective
